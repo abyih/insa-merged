@@ -6,9 +6,44 @@ import cors from "cors";
 import { execFile } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import Database from "better-sqlite3";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize SQLite database connection
+const db = new Database("users.db");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS onos_slices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slice_type TEXT,
+    color TEXT,
+    vlan_id INTEGER,
+    bandwidth_kbps INTEGER,
+    burst_kbps INTEGER,
+    hosts TEXT,            -- JSON array
+    status TEXT DEFAULT 'ACTIVE',
+    meter_ids TEXT,        -- JSON object { deviceId: meterId }
+    flow_rule_ids TEXT,    -- JSON array of flow IDs
+    priority INTEGER DEFAULT 40000,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS onos_slice_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    total_capacity_kbps INTEGER DEFAULT 100000,
+    vlan_counter INTEGER DEFAULT 100,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+db.prepare(
+  `INSERT OR IGNORE INTO onos_slice_config (id, total_capacity_kbps, vlan_counter) VALUES (1, 100000, 100)`
+).run();
 
 // Prevent server process from crashing on unhandled promise rejections / network errors
 process.on("unhandledRejection", (reason) => {
@@ -36,6 +71,141 @@ app.use(
 );
 
 app.use(express.json());
+
+/* ==============================================================================
+   SQLITE PERSISTENCE: ONOS SLICES & CAPACITY ENDPOINTS
+   ============================================================================== */
+
+app.get(["/api/onos/slices/capacity", "/api/onos-service/slices/capacity"], (req, res) => {
+  try {
+    const cfg = db.prepare("SELECT * FROM onos_slice_config WHERE id = 1").get();
+    res.json({ totalCapacityKbps: cfg?.total_capacity_kbps || 100000 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put(["/api/onos/slices/capacity", "/api/onos-service/slices/capacity"], (req, res) => {
+  try {
+    const { totalCapacityKbps } = req.body;
+    db.prepare("UPDATE onos_slice_config SET total_capacity_kbps = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1").run(Number(totalCapacityKbps) || 100000);
+    res.json({ success: true, totalCapacityKbps });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(["/api/onos/slices/vlan/next", "/api/onos-service/slices/vlan/next"], (req, res) => {
+  try {
+    const cfg = db.prepare("SELECT vlan_counter FROM onos_slice_config WHERE id = 1").get();
+    const currentVlan = cfg?.vlan_counter || 100;
+    db.prepare("UPDATE onos_slice_config SET vlan_counter = vlan_counter + 1, updated_at = CURRENT_TIMESTAMP WHERE id = 1").run();
+    res.json({ vlanId: currentVlan });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(["/api/onos/slices", "/api/onos-service/slices"], (req, res) => {
+  try {
+    const rows = db.prepare("SELECT * FROM onos_slices ORDER BY created_at DESC").all();
+    const slices = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: r.slice_type,
+      color: r.color,
+      vlanId: r.vlan_id,
+      bandwidthKbps: r.bandwidth_kbps,
+      burstKbps: r.burst_kbps,
+      hosts: JSON.parse(r.hosts || "[]"),
+      status: r.status,
+      meterIds: JSON.parse(r.meter_ids || "{}"),
+      flowRuleIds: JSON.parse(r.flow_rule_ids || "[]"),
+      priority: r.priority,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }));
+    res.json(slices);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(["/api/onos/slices/:id", "/api/onos-service/slices/:id"], (req, res) => {
+  try {
+    const r = db.prepare("SELECT * FROM onos_slices WHERE id = ?").get(req.params.id);
+    if (!r) return res.status(404).json({ error: "Slice not found" });
+    res.json({
+      id: r.id,
+      name: r.name,
+      type: r.slice_type,
+      color: r.color,
+      vlanId: r.vlan_id,
+      bandwidthKbps: r.bandwidth_kbps,
+      burstKbps: r.burst_kbps,
+      hosts: JSON.parse(r.hosts || "[]"),
+      status: r.status,
+      meterIds: JSON.parse(r.meter_ids || "{}"),
+      flowRuleIds: JSON.parse(r.flow_rule_ids || "[]"),
+      priority: r.priority,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post(["/api/onos/slices", "/api/onos-service/slices"], (req, res) => {
+  try {
+    const s = req.body;
+    if (!s.id || !s.name) {
+      return res.status(400).json({ error: "Slice ID and name required" });
+    }
+    const existing = db.prepare("SELECT id FROM onos_slices WHERE id = ?").get(s.id);
+    if (existing) {
+      db.prepare(`
+        UPDATE onos_slices SET
+          name = ?, slice_type = ?, color = ?, vlan_id = ?,
+          bandwidth_kbps = ?, burst_kbps = ?, hosts = ?, status = ?,
+          meter_ids = ?, flow_rule_ids = ?, priority = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(
+        s.name, s.type || s.slice_type || "CUSTOM", s.color || "#6366f1", s.vlanId || s.vlan_id || null,
+        s.bandwidthKbps || s.bandwidth_kbps || 10000, s.burstKbps || s.burst_kbps || 15000,
+        JSON.stringify(s.hosts || []), s.status || "ACTIVE",
+        JSON.stringify(s.meterIds || s.meter_ids || {}), JSON.stringify(s.flowRuleIds || s.flow_rule_ids || []),
+        s.priority || 40000, s.id
+      );
+    } else {
+      db.prepare(`
+        INSERT INTO onos_slices (
+          id, name, slice_type, color, vlan_id, bandwidth_kbps, burst_kbps,
+          hosts, status, meter_ids, flow_rule_ids, priority
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        s.id, s.name, s.type || s.slice_type || "CUSTOM", s.color || "#6366f1", s.vlanId || s.vlan_id || null,
+        s.bandwidthKbps || s.bandwidth_kbps || 10000, s.burstKbps || s.burst_kbps || 15000,
+        JSON.stringify(s.hosts || []), s.status || "ACTIVE",
+        JSON.stringify(s.meterIds || s.meter_ids || {}), JSON.stringify(s.flowRuleIds || s.flow_rule_ids || []),
+        s.priority || 40000
+      );
+    }
+    res.json({ success: true, slice: s });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete(["/api/onos/slices/:id", "/api/onos-service/slices/:id"], (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare("DELETE FROM onos_slices WHERE id = ?").run(id);
+    res.json({ success: true, message: `Slice ${id} removed from SQLite database` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Helper: ONOS REST Fetch
 const onosFetch = async (apiPath, options = {}) => {

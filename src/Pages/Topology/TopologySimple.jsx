@@ -14,6 +14,7 @@ const TopologySimple = ({
 	crossCheckOpenstack = true,
 	onToggleCrossCheck,
 	openstackConnected = true,
+	externalPath,
 }) => {
 	const containerRef = useRef(null);
 	const edgesRef = useRef(null);
@@ -282,6 +283,12 @@ const TopologySimple = ({
 			dots.forEach((el) => el.remove());
 		};
 	}, [buildGraph, findNodeByMac, topologyData]);
+
+	useEffect(() => {
+		if (externalPath && externalPath.length > 1 && edgesRef.current) {
+			highlightPath(externalPath);
+		}
+	}, [externalPath]);
 
 	const renderNodeDetails = () => {
 		if (!selectedNode) {

@@ -25,7 +25,10 @@ MODEL_NAME = "all-MiniLM-L6-v2"
 
 print(f"Loading local neural intent model ({MODEL_NAME})...")
 t0 = time.time()
-model = SentenceTransformer(MODEL_NAME)
+try:
+    model = SentenceTransformer(MODEL_NAME, local_files_only=True)
+except Exception:
+    model = SentenceTransformer(MODEL_NAME)
 print(f"Model ready in {time.time() - t0:.2f}s on CPU.")
 
 # ─── 3GPP Slice Semantic Profiles ───────────────────────────────────────────

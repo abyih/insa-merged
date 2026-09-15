@@ -35,6 +35,7 @@ export default function Cloud() {
   const [flows, setFlows] = useState([]);
   const [securityRules, setSecurityRules] = useState([]);
   const [selectedVmId, setSelectedVmId] = useState(null);
+  const [slices, setSlices] = useState([]);
 
   const [ruleForm, setRuleForm] = useState({
     source: "",
@@ -162,6 +163,13 @@ export default function Cloud() {
       if (payload.infrastructureStatus) {
         setInfrastructureStatus(payload.infrastructureStatus);
       }
+
+      fetch("/api/slices")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.slices) setSlices(data.slices);
+        })
+        .catch(() => {});
     } catch (err) {
       setError(err.message || "Failed to load cloud data");
     } finally {
@@ -501,6 +509,7 @@ export default function Cloud() {
               networks={networks}
               routers={routers}
               ports={ports}
+              slices={slices}
               onClose={() => setShowTopology(false)}
             />
           </section>

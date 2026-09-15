@@ -16,6 +16,9 @@ import Stats from "./Pages/Stats";
 import AnomalyDetector from "./Pages/AnomalyDetector/AnomalyDetector";
 import Cloud from "./Pages/Cloud";
 import NetworkSlicing from "./Pages/NetworkSlicing";
+import NetworkSlices from "./Pages/NetworkSlices";
+import VmTopologyMap from "./Pages/VmTopologyMap";
+import PathTrace from "./Pages/PathTrace/PathTrace";
 import { NotificationProvider } from "./context/NotificationContext";
 
 // ─── Top-level error boundary — shows the actual crash instead of white screen
@@ -210,7 +213,10 @@ const App = () => (
             <Route path="/stats"               element={<Stats />} />
             <Route path="/topology"            element={<TopologyRoute />} />
             <Route path="/cloud"               element={<Cloud />} />
-            <Route path="/network-slicing"   element={<NetworkSlicing />} />
+            <Route path="/network-slicing"     element={<NetworkSlicing />} />
+            <Route path="/slices"              element={<NetworkSlices />} />
+            <Route path="/vm-topology"         element={<VmTopologyMap />} />
+            <Route path="/path-trace"          element={<PathTrace />} />
             <Route path="/anomaly"             element={<AnomalyDetector />} />
             <Route path="/api-tester"          element={<ApiTester />} />
             <Route path="/yangui"              element={<Yangman />} />

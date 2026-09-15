@@ -91,6 +91,11 @@ export function getNetworkCapacity() {
 export function setNetworkCapacity(kbps) {
   if (kbps && kbps > 0) {
     localStorage.setItem("onos-slice-total-capacity", String(kbps));
+    fetch("/api/onos/slices/capacity", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ totalCapacityKbps: kbps }),
+    }).catch(() => {});
   }
 }
 
@@ -107,7 +112,23 @@ function getNextVlanId() {
   return candidate;
 }
 
-// ─── Local persistence ───────────────────────────────────────────────────────
+// ─── Local & SQLite persistence ──────────────────────────────────────────────
+
+export async function fetchSlicesFromDb() {
+  try {
+    const res = await fetch("/api/onos/slices");
+    if (res.ok) {
+      const dbSlices = await res.json();
+      if (Array.isArray(dbSlices)) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(dbSlices));
+        return dbSlices;
+      }
+    }
+  } catch (err) {
+    // Fallback to local storage if offline
+  }
+  return loadSlices();
+}
 
 export function loadSlices() {
   try {
@@ -120,6 +141,15 @@ export function loadSlices() {
 
 export function saveSlices(slices) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(slices));
+  if (Array.isArray(slices)) {
+    slices.forEach((s) => {
+      fetch("/api/onos/slices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(s),
+      }).catch(() => {});
+    });
+  }
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -128,7 +158,12 @@ export function saveSlices(slices) {
  * Get all saved slices, enriched with live meter stats from ONOS.
  */
 export async function getSlices() {
-  const slices = loadSlices();
+  let slices = [];
+  try {
+    slices = await fetchSlicesFromDb();
+  } catch {
+    slices = loadSlices();
+  }
 
   const enriched = await Promise.all(
     slices.map(async (slice) => {
@@ -1037,6 +1072,9 @@ export async function deleteSlice(sliceId) {
 
   const remaining = slices.filter((s) => s.id !== sliceId);
   saveSlices(remaining);
+
+  // Remove from SQLite database
+  fetch(`/api/onos/slices/${encodeURIComponent(sliceId)}`, { method: "DELETE" }).catch(() => {});
 
   return { success: true, warnings: errors.length > 0 ? errors : undefined };
 }
