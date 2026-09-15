@@ -8,15 +8,19 @@ import {
   Activity,
   Shield,
   Cloud,
+  Layers,
   Wrench,
   Menu,
   X,
   LogOut,
   FileCode,
+  Route,
   Sun,
   Moon,
+  Bell,
 } from "lucide-react";
 import logo from "../../assets/images/insa_logo.png";
+import { useNotifications } from "../../context/NotificationContext";
 
 function Header() {
   const location = useLocation();
@@ -25,6 +29,8 @@ function Header() {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return document.documentElement.classList.contains("dark");
   });
+
+  const { unreadCount, isDrawerOpen, setIsDrawerOpen } = useNotifications();
 
   // Keep state in sync with DOM class in case it is changed elsewhere
   useEffect(() => {
@@ -55,10 +61,13 @@ function Header() {
     { label: "Topology", icon: <Network className="w-4 h-4" />, to: "/topology" },
     { label: "Devices", icon: <Cpu className="w-4 h-4" />, to: "/nodes" },
     { label: "Flows", icon: <GitBranch className="w-4 h-4" />, to: "/flows" },
-    { label: "Flow Manager", icon: <FileCode className="w-4 h-4" />, to: "/flow-manager" },
-    { label: "Stats", icon: <Activity className="w-4 h-4" />, to: "/stats" },
+    { label: "Path Trace", icon: <Route className="w-4 h-4" />, to: "/path-trace" },
     { label: "Anomaly", icon: <Shield className="w-4 h-4" />, to: "/anomaly" },
     { label: "Cloud", icon: <Cloud className="w-4 h-4" />, to: "/cloud" },
+    { label: "ONOS Slicing", icon: <Layers className="w-4 h-4" />, to: "/network-slicing" },
+    { label: "OS Slices", icon: <Layers className="w-4 h-4" />, to: "/slices" },
+    { label: "VM Map", icon: <Network className="w-4 h-4" />, to: "/vm-topology" },
+    { label: "Stats", icon: <Activity className="w-4 h-4" />, to: "/stats" },
     { label: "Tools", icon: <Wrench className="w-4 h-4" />, to: "/api-tester" },
   ];
 
@@ -107,6 +116,22 @@ function Header() {
               );
             })}
           </nav>
+        )}
+
+        {/* Notifications Bell */}
+        {!isLoginPage && (
+          <button
+            onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+            className="relative p-2 rounded-lg border border-zinc-850 hover:bg-zinc-900 text-zinc-450 hover:text-zinc-100 transition-all duration-200 focus:outline-none"
+            title="View SLA Alerts & Notifications"
+          >
+            <Bell className="w-4 h-4 text-zinc-300" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-extrabold rounded-full flex items-center justify-center border-2 border-zinc-950 animate-pulse">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
         )}
 
         {/* Theme switcher */}

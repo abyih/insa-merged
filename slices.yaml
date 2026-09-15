@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# Slice definitions: what queues to create and how to route traffic into them.
+# This file is the single source of truth for "what does slicing mean" on
+# every switch the automation layer manages.
+# ---------------------------------------------------------------------------
+
+# Global default: applied to every newly discovered switch unless overridden.
+default_max_rate: 1000000000   # 1 Gbps port ceiling
+
+slices:
+  - name: low-latency
+    queue_id: 0
+    priority: high
+    min_rate: 400000000        # guaranteed 400 Mbps
+    match:
+      type: vlan
+      vlan_id: 10
+
+  - name: research
+    queue_id: 1
+    priority: medium
+    min_rate: 300000000
+    match:
+      type: vlan
+      vlan_id: 20
+
+  - name: guest
+    queue_id: 2
+    priority: low
+    min_rate: 200000000
+    match:
+      type: vlan
+      vlan_id: 30
+
+# ---------------------------------------------------------------------------
+# Per-switch overrides (optional). Leave empty and every switch gets the
+# same slice set above, applied to every port matching `apply_to_ports`.
+# ---------------------------------------------------------------------------
+switch_overrides:
+  # example: a core switch that needs higher ceilings
+  # - switch_id: "core-sw-01"
+  #   max_rate: 10000000000
+  #   apply_to_ports: ["eth0"]
+
+apply_to_ports: "*"     # "*" = all ports, or a name prefix like "eth"
+
+ssh:
+  user: admin
+  key_path: /home/automation/.ssh/id_rsa

@@ -26,7 +26,7 @@ const CATEGORIES = [
     id: "openflow",
     label: "OpenFlow",
     icon: <Cpu className="w-4 h-4" />,
-    matchFn: (n) => !isDevstackNode(n) && (OPENFLOW_TYPES.has(n.type) || n.id?.startsWith("openflow:") || n.id?.startsWith("host:")),
+    matchFn: (n) => !isDevstackNode(n),
   },
   {
     id: "devstack",

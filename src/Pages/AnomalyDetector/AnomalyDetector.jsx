@@ -26,6 +26,11 @@ import {
   ArrowDown,
   GitMerge,
   Layers,
+  Lock,
+  Unlock,
+  Radio,
+  Eye,
+  AlertOctagon,
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -37,23 +42,56 @@ const SERVER_URLS = {
   OFFLINE: "http://localhost:5002",
 };
 
-const POLL_MS_ONLINE = 15_000;
-const POLL_MS_OFFLINE = 2_000;
+const POLL_MS = 3_000;
+const AUTO_BLOCK_RF_THRESHOLD = 0.98;
+
+// Online IF Features (ODL flow tables)
+const IF_FEATURES = [
+  { key: "avg_packet_size", abbr: "APS", label: "Avg Packet Size", unit: "bytes" },
+  { key: "bytes_per_second", abbr: "B/S", label: "Bytes / Second", unit: "B/s" },
+  { key: "packet_count", abbr: "PKT", label: "Packet Count", unit: "pkts" },
+  { key: "active_flow_count", abbr: "AFL", label: "Active Flows", unit: "flows" },
+  { key: "asymmetry", abbr: "ASY", label: "Asymmetry", unit: "ratio" },
+];
+
+// Offline RF Features (ODL extracted flows)
+const RF_FEATURES = [
+  { key: "avg_pkt_size", abbr: "APS", label: "Avg Packet Size", unit: "bytes" },
+  { key: "total_duration_sec", abbr: "DUR", label: "Flow Duration", unit: "sec" },
+  { key: "bytes_per_sec", abbr: "B/S", label: "Bytes / Second", unit: "B/s" },
+  { key: "tx_rx_byte_asymmetry", abbr: "ASY", label: "TX/RX Asymmetry", unit: "0-1" },
+  { key: "pktcount", abbr: "PKT", label: "Packet Count", unit: "pkts" },
+  { key: "tx_bytes", abbr: "TXB", label: "TX Bytes", unit: "bytes" },
+];
+
+// Supervised 5-Class Attack Classification
+const ATTACK_TYPES = {
+  0: { name: "Normal", icon: "✓", color: "#16a34a", bg: "rgba(34,197,94,0.12)", border: "rgba(34,197,94,0.3)", pulseClass: "" },
+  1: { name: "DDoS", icon: "☠", color: "#dc2626", bg: "rgba(239,68,68,0.14)", border: "rgba(239,68,68,0.4)", pulseClass: "animate-pulse-red" },
+  2: { name: "Port Scan", icon: "⌕", color: "#ea580c", bg: "rgba(234,88,12,0.14)", border: "rgba(234,88,12,0.4)", pulseClass: "animate-pulse-orange" },
+  3: { name: "Brute Force", icon: "🔓", color: "#d97706", bg: "rgba(217,119,6,0.14)", border: "rgba(217,119,6,0.4)", pulseClass: "animate-pulse-amber" },
+  4: { name: "Botnet", icon: "🤖", color: "#9333ea", bg: "rgba(147,51,234,0.14)", border: "rgba(147,51,234,0.4)", pulseClass: "animate-pulse-purple" },
+
+  // String fallbacks
+  NORMAL: { name: "Normal", icon: "✓", color: "#16a34a", bg: "rgba(34,197,94,0.12)", border: "rgba(34,197,94,0.3)", pulseClass: "" },
+  ATTACK: { name: "Attack Anomaly", icon: "⚠", color: "#dc2626", bg: "rgba(239,68,68,0.14)", border: "rgba(239,68,68,0.4)", pulseClass: "animate-pulse-red" },
+  SUSPICIOUS: { name: "Suspicious Flow", icon: "⚠", color: "#d97706", bg: "rgba(217,119,6,0.14)", border: "rgba(217,119,6,0.4)", pulseClass: "animate-pulse-amber" },
+};
 
 const THREAT_CONFIG = {
   NONE: {
     color: "#16a34a",
-    bg: "rgba(34,197,94,0.08)",
+    bg: "rgba(34,197,94,0.06)",
     border: "rgba(34,197,94,0.25)",
-    glow: "0 0 40px rgba(34,197,94,0.12)",
+    glow: "0 0 35px rgba(34,197,94,0.12)",
     icon: ShieldCheck,
     label: "All Clear",
   },
   LOW: {
     color: "#d97706",
-    bg: "rgba(234,179,8,0.08)",
+    bg: "rgba(234,179,8,0.06)",
     border: "rgba(234,179,8,0.25)",
-    glow: "0 0 40px rgba(234,179,8,0.12)",
+    glow: "0 0 35px rgba(234,179,8,0.12)",
     icon: Info,
     label: "Low Threat",
   },
@@ -61,7 +99,7 @@ const THREAT_CONFIG = {
     color: "#ea580c",
     bg: "rgba(249,115,22,0.08)",
     border: "rgba(249,115,22,0.30)",
-    glow: "0 0 50px rgba(249,115,22,0.15)",
+    glow: "0 0 45px rgba(249,115,22,0.15)",
     icon: AlertTriangle,
     label: "Medium Threat",
   },
@@ -69,15 +107,15 @@ const THREAT_CONFIG = {
     color: "#dc2626",
     bg: "rgba(239,68,68,0.10)",
     border: "rgba(239,68,68,0.35)",
-    glow: "0 0 60px rgba(239,68,68,0.20)",
+    glow: "0 0 55px rgba(239,68,68,0.20)",
     icon: ShieldAlert,
     label: "High Threat",
   },
   CRITICAL: {
-    color: "#b91c1c",
-    bg: "rgba(220,38,38,0.14)",
+    color: "#ef4444",
+    bg: "rgba(220,38,38,0.15)",
     border: "rgba(220,38,38,0.50)",
-    glow: "0 0 80px rgba(220,38,38,0.30)",
+    glow: "0 0 75px rgba(220,38,38,0.30)",
     icon: Zap,
     label: "Critical Threat",
   },
@@ -85,97 +123,124 @@ const THREAT_CONFIG = {
 
 const STATE_BADGES = {
   ATTACK: {
-    bg: "rgba(239,68,68,0.12)",
-    color: "#dc2626",
-    border: "rgba(239,68,68,0.3)",
+    bg: "rgba(239,68,68,0.14)",
+    color: "#ef4444",
+    border: "rgba(239,68,68,0.35)",
     dot: "#ef4444",
     label: "ATTACK",
   },
   SUSPICIOUS: {
-    bg: "rgba(245,158,11,0.12)",
-    color: "#d97706",
-    border: "rgba(245,158,11,0.3)",
+    bg: "rgba(245,158,11,0.14)",
+    color: "#f59e0b",
+    border: "rgba(245,158,11,0.35)",
     dot: "#f59e0b",
     label: "SUSPICIOUS",
   },
   NORMAL: {
-    bg: "rgba(34,197,94,0.12)",
-    color: "#16a34a",
-    border: "rgba(34,197,94,0.3)",
+    bg: "rgba(34,197,94,0.14)",
+    color: "#22c55e",
+    border: "rgba(34,197,94,0.35)",
     dot: "#22c55e",
     label: "NORMAL",
   },
 };
 
 const CATEGORY_META = {
-  DDoS: {
-    icon: "💥",
-    label: "DDoS",
-    color: "#dc2626",
-    bg: "rgba(239,68,68,0.12)",
-    border: "rgba(239,68,68,0.3)",
-  },
-  DoS: {
-    icon: "🌊",
-    label: "DoS",
-    color: "#ea580c",
-    bg: "rgba(249,115,22,0.12)",
-    border: "rgba(249,115,22,0.3)",
-  },
-  Probe: {
-    icon: "🎯",
-    label: "Probe / Scan",
-    color: "#d97706",
-    bg: "rgba(245,158,11,0.12)",
-    border: "rgba(245,158,11,0.3)",
-  },
-  Brute_Force: {
-    icon: "🔑",
-    label: "Brute Force",
-    color: "#ca8a04",
-    bg: "rgba(234,179,8,0.12)",
-    border: "rgba(234,179,8,0.3)",
-  },
-  Botnet: {
-    icon: "🤖",
-    label: "Botnet",
-    color: "#9333ea",
-    bg: "rgba(168,85,247,0.12)",
-    border: "rgba(168,85,247,0.3)",
-  },
-  Web_Attack: {
-    icon: "🌐",
-    label: "Web Attack",
-    color: "#db2777",
-    bg: "rgba(236,72,153,0.12)",
-    border: "rgba(236,72,153,0.3)",
-  },
-  Normal: {
-    icon: "🟢",
-    label: "Normal",
-    color: "#16a34a",
-    bg: "rgba(34,197,94,0.12)",
-    border: "rgba(34,197,94,0.3)",
-  },
+  DDoS: { icon: "💥", label: "DDoS", color: "#dc2626", bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.3)" },
+  DoS: { icon: "🌊", label: "DoS", color: "#ea580c", bg: "rgba(249,115,22,0.12)", border: "rgba(249,115,22,0.3)" },
+  "Port Scan": { icon: "⌕", label: "Port Scan", color: "#ea580c", bg: "rgba(234,88,12,0.12)", border: "rgba(234,88,12,0.3)" },
+  Probe: { icon: "🎯", label: "Probe / Scan", color: "#d97706", bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.3)" },
+  Brute_Force: { icon: "🔑", label: "Brute Force", color: "#ca8a04", bg: "rgba(234,179,8,0.12)", border: "rgba(234,179,8,0.3)" },
+  Botnet: { icon: "🤖", label: "Botnet", color: "#9333ea", bg: "rgba(168,85,247,0.12)", border: "rgba(168,85,247,0.3)" },
+  Normal: { icon: "🟢", label: "Normal", color: "#16a34a", bg: "rgba(34,197,94,0.12)", border: "rgba(34,197,94,0.3)" },
 };
 
+/* Resilient formatting helper: always renders number, never blanks */
+function fmt(v, decimals = 2) {
+  const n = typeof v === "number" && !Number.isNaN(v) ? v : Number(v);
+  if (v == null || Number.isNaN(n)) return (0).toLocaleString();
+  return parseFloat(n.toFixed(decimals)).toLocaleString();
+}
+
+/* Resilient feature extractor from switch result objects */
+function getFeature(result, key) {
+  if (!result) return 0;
+  if (result.features && result.features[key] != null) return result.features[key];
+  if (result[key] != null) return result[key];
+
+  const fallbacks = {
+    avg_packet_size: ["avg_pkt_size", "avg_pkt_len"],
+    avg_pkt_size: ["avg_packet_size", "avg_pkt_len"],
+    bytes_per_second: ["bytes_per_sec", "byte_rate", "bytes_per_second_rate"],
+    bytes_per_sec: ["bytes_per_second", "byte_rate", "bytes_per_sec_rate"],
+    packet_count: ["pktcount", "pkt_rate", "packetCount"],
+    pktcount: ["packet_count", "pkt_rate", "packetCount"],
+    flow_duration: ["total_duration_sec", "total_duration", "duration"],
+    total_duration_sec: ["flow_duration", "total_duration", "duration"],
+    tx_rx_byte_asymmetry: ["asymmetry"],
+    asymmetry: ["tx_rx_byte_asymmetry"],
+    active_flow_count: ["activeFlowCount", "flow_count"],
+  };
+
+  const altKeys = fallbacks[key] || [];
+  for (const altKey of altKeys) {
+    if (result.features && result.features[altKey] != null) return result.features[altKey];
+    if (result[altKey] != null) return result[altKey];
+  }
+  return 0;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
-   STYLES & THEME TOKENS
+   STYLES & CSS TOKENS
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const S = {
   glass: {
-    background: "var(--theme-card)",
-    border: "1px solid var(--theme-card-border)",
+    background: "var(--theme-card, #18181b)",
+    border: "1px solid var(--theme-card-border, #27272a)",
     borderRadius: 16,
-    boxShadow: "0 4px 20px var(--theme-panel-glow)",
+    boxShadow: "0 4px 20px var(--theme-panel-glow, rgba(0,0,0,0.3))",
   },
   glassInner: {
-    background: "var(--theme-bg)",
-    border: "1px solid var(--theme-card-border)",
+    background: "var(--theme-bg, #09090b)",
+    border: "1px solid var(--theme-card-border, #27272a)",
     borderRadius: 12,
   },
 };
+
+const customStyles = `
+  @keyframes pulse-red {
+    0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); border-color: rgba(239, 68, 68, 0.6); }
+    50% { box-shadow: 0 0 35px rgba(239, 68, 68, 0.85); border-color: rgba(239, 68, 68, 1); }
+  }
+  @keyframes pulse-orange {
+    0%, 100% { box-shadow: 0 0 15px rgba(234, 88, 12, 0.4); border-color: rgba(234, 88, 12, 0.6); }
+    50% { box-shadow: 0 0 35px rgba(234, 88, 12, 0.85); border-color: rgba(234, 88, 12, 1); }
+  }
+  @keyframes pulse-amber {
+    0%, 100% { box-shadow: 0 0 15px rgba(217, 119, 6, 0.4); border-color: rgba(217, 119, 6, 0.6); }
+    50% { box-shadow: 0 0 35px rgba(217, 119, 6, 0.85); border-color: rgba(217, 119, 6, 1); }
+  }
+  @keyframes pulse-purple {
+    0%, 100% { box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); border-color: rgba(168, 85, 247, 0.6); }
+    50% { box-shadow: 0 0 35px rgba(168, 85, 247, 0.85); border-color: rgba(168, 85, 247, 1); }
+  }
+  .animate-pulse-red { animation: pulse-red 2s infinite; }
+  .animate-pulse-orange { animation: pulse-orange 2s infinite; }
+  .animate-pulse-amber { animation: pulse-amber 2s infinite; }
+  .animate-pulse-purple { animation: pulse-purple 2s infinite; }
+
+  .btn-reactive {
+    transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease, opacity 120ms ease;
+  }
+  .btn-reactive:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .btn-reactive:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+`;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SUBCOMPONENTS
@@ -186,12 +251,13 @@ function ProbabilityChart({ data }) {
   const W = 720,
     H = 140,
     PAD = 28;
+
   if (!data || data.length === 0) {
     return (
       <div style={{ ...S.glassInner, padding: "32px 0", textAlign: "center" }}>
-        <Activity size={24} style={{ color: "var(--theme-text-muted)", marginBottom: 8 }} />
-        <p style={{ color: "var(--theme-text-muted)", fontSize: 13, margin: 0 }}>
-          No detection data yet — run an attack simulation
+        <Activity size={24} style={{ color: "var(--theme-text-muted, #71717a)", marginBottom: 8 }} />
+        <p style={{ color: "var(--theme-text-muted, #71717a)", fontSize: 13, margin: 0 }}>
+          No detection data yet — run an attack simulation or query telemetry
         </p>
       </div>
     );
@@ -205,11 +271,11 @@ function ProbabilityChart({ data }) {
   const zoneY_attack = toY(0.7);
   const zoneY_suspicious = toY(0.4);
 
-  const linePts = points.map((p, i) => `${PAD + i * xStep},${toY(p.prob)}`).join(" ");
+  const linePts = points.map((p, i) => `${PAD + i * xStep},${toY(p.prob ?? 0)}`).join(" ");
 
   const areaPath =
     `M${PAD},${toY(0)} ` +
-    points.map((p, i) => `L${PAD + i * xStep},${toY(p.prob)}`).join(" ") +
+    points.map((p, i) => `L${PAD + i * xStep},${toY(p.prob ?? 0)}`).join(" ") +
     ` L${PAD + (n - 1) * xStep},${toY(0)} Z`;
 
   return (
@@ -221,71 +287,25 @@ function ProbabilityChart({ data }) {
         </linearGradient>
       </defs>
 
-      <rect
-        x={PAD}
-        y={PAD}
-        width={W - PAD * 2}
-        height={zoneY_suspicious - PAD}
-        fill="rgba(239,68,68,0.06)"
-        rx="4"
-      />
-      <rect
-        x={PAD}
-        y={zoneY_suspicious}
-        width={W - PAD * 2}
-        height={zoneY_attack - zoneY_suspicious}
-        fill="rgba(245,158,11,0.04)"
-        rx="0"
-      />
+      <rect x={PAD} y={PAD} width={W - PAD * 2} height={zoneY_suspicious - PAD} fill="rgba(239,68,68,0.06)" rx="4" />
+      <rect x={PAD} y={zoneY_suspicious} width={W - PAD * 2} height={zoneY_attack - zoneY_suspicious} fill="rgba(245,158,11,0.04)" rx="0" />
 
-      <line
-        x1={PAD}
-        y1={zoneY_attack}
-        x2={W - PAD}
-        y2={zoneY_attack}
-        stroke="rgba(239,68,68,0.35)"
-        strokeWidth="1"
-        strokeDasharray="4,4"
-      />
-      <line
-        x1={PAD}
-        y1={zoneY_suspicious}
-        x2={W - PAD}
-        y2={zoneY_suspicious}
-        stroke="rgba(245,158,11,0.3)"
-        strokeWidth="1"
-        strokeDasharray="4,4"
-      />
+      <line x1={PAD} y1={zoneY_attack} x2={W - PAD} y2={zoneY_attack} stroke="rgba(239,68,68,0.35)" strokeWidth="1" strokeDasharray="4,4" />
+      <line x1={PAD} y1={zoneY_suspicious} x2={W - PAD} y2={zoneY_suspicious} stroke="rgba(245,158,11,0.3)" strokeWidth="1" strokeDasharray="4,4" />
 
-      <text x={PAD - 4} y={zoneY_attack + 4} fill="#dc2626" fontSize="9" textAnchor="end" opacity="0.8">
-        0.70
-      </text>
-      <text x={PAD - 4} y={zoneY_suspicious + 4} fill="#d97706" fontSize="9" textAnchor="end" opacity="0.8">
-        0.40
-      </text>
-      <text x={PAD - 4} y={toY(1) + 4} fill="var(--theme-text-muted)" fontSize="9" textAnchor="end" opacity="0.6">
-        1.0
-      </text>
-      <text x={PAD - 4} y={toY(0) + 4} fill="var(--theme-text-muted)" fontSize="9" textAnchor="end" opacity="0.6">
-        0.0
-      </text>
+      <text x={PAD - 4} y={zoneY_attack + 4} fill="#dc2626" fontSize="9" textAnchor="end" opacity="0.8">0.70</text>
+      <text x={PAD - 4} y={zoneY_suspicious + 4} fill="#d97706" fontSize="9" textAnchor="end" opacity="0.8">0.40</text>
+      <text x={PAD - 4} y={toY(1) + 4} fill="var(--theme-text-muted, #71717a)" fontSize="9" textAnchor="end" opacity="0.6">1.0</text>
+      <text x={PAD - 4} y={toY(0) + 4} fill="var(--theme-text-muted, #71717a)" fontSize="9" textAnchor="end" opacity="0.6">0.0</text>
 
       <path d={areaPath} fill="url(#areaGrad)" />
       <polyline points={linePts} fill="none" stroke="#8b5cf6" strokeWidth="2.5" strokeLinejoin="round" />
 
       {points.map((p, i) =>
         p.state === "ATTACK" ? (
-          <circle
-            key={i}
-            cx={PAD + i * xStep}
-            cy={toY(p.prob)}
-            r="4.5"
-            fill="#ef4444"
-            stroke="#fff"
-            strokeWidth="1.5"
-          />
+          <circle key={i} cx={PAD + i * xStep} cy={toY(p.prob ?? 0)} r="4.5" fill="#ef4444" stroke="#fff" strokeWidth="1.5" />
         ) : p.state === "SUSPICIOUS" ? (
-          <circle key={i} cx={PAD + i * xStep} cy={toY(p.prob)} r="3.5" fill="#f59e0b" opacity="0.85" />
+          <circle key={i} cx={PAD + i * xStep} cy={toY(p.prob ?? 0)} r="3.5" fill="#f59e0b" opacity="0.85" />
         ) : null
       )}
     </svg>
@@ -306,11 +326,11 @@ function StatCard({ label, value, sub, accent, icon: Icon }) {
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-2px)";
-        e.currentTarget.style.borderColor = accent ? `${accent}44` : "var(--theme-text-muted)";
+        e.currentTarget.style.borderColor = accent ? `${accent}55` : "var(--theme-card-border, #27272a)";
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "";
-        e.currentTarget.style.borderColor = "var(--theme-card-border)";
+        e.currentTarget.style.borderColor = "var(--theme-card-border, #27272a)";
       }}
     >
       <div
@@ -330,22 +350,13 @@ function StatCard({ label, value, sub, accent, icon: Icon }) {
         <Icon size={20} />
       </div>
       <div style={{ minWidth: 0 }}>
-        <p
-          style={{
-            fontSize: 11,
-            color: "var(--theme-text-muted)",
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            margin: 0,
-            fontWeight: 600,
-          }}
-        >
+        <p style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)", textTransform: "uppercase", letterSpacing: "0.06em", margin: 0, fontWeight: 600 }}>
           {label}
         </p>
-        <p style={{ fontSize: 24, fontWeight: 700, margin: "2px 0 0", color: accent || "var(--theme-fg)", lineHeight: 1 }}>
+        <p style={{ fontSize: 24, fontWeight: 700, margin: "2px 0 0", color: accent || "var(--theme-fg, #fafafa)", lineHeight: 1 }}>
           {typeof value === "number" ? value.toLocaleString() : value}
         </p>
-        {sub && <p style={{ fontSize: 11, color: "var(--theme-text-muted)", margin: "4px 0 0" }}>{sub}</p>}
+        {sub && <p style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)", margin: "4px 0 0" }}>{sub}</p>}
       </div>
     </div>
   );
@@ -355,14 +366,14 @@ function StatCard({ label, value, sub, accent, icon: Icon }) {
 function ProtocolBar({ byProtocol }) {
   const entries = Object.entries(byProtocol || {});
   if (entries.length === 0) return null;
-  const total = entries.reduce((s, [, v]) => s + v.total, 0);
+  const total = entries.reduce((s, [, v]) => s + (v.total || 0), 0);
   const colors = { TCP: "#8b5cf6", UDP: "#0284c7", ICMP: "#d97706" };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {entries.map(([proto, v]) => {
         const pct = total > 0 ? (v.total / total) * 100 : 0;
-        const attackPct = v.total > 0 ? (v.attacks / v.total) * 100 : 0;
+        const attackPct = v.total > 0 ? ((v.attacks || 0) / v.total) * 100 : 0;
         const c = colors[proto] || "#64748b";
         return (
           <div key={proto} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -371,7 +382,7 @@ function ProtocolBar({ byProtocol }) {
               style={{
                 flex: 1,
                 height: 8,
-                background: "var(--theme-card-border)",
+                background: "var(--theme-card-border, #27272a)",
                 borderRadius: 4,
                 overflow: "hidden",
                 position: "relative",
@@ -401,7 +412,7 @@ function ProtocolBar({ byProtocol }) {
                 />
               )}
             </div>
-            <span style={{ width: 36, fontSize: 11, color: "var(--theme-text-muted)", textAlign: "right", fontFamily: "monospace" }}>
+            <span style={{ width: 36, fontSize: 11, color: "var(--theme-text-muted, #71717a)", textAlign: "right", fontFamily: "monospace" }}>
               {v.total}
             </span>
             {v.attacks > 0 && (
@@ -429,7 +440,8 @@ function ProtocolBar({ byProtocol }) {
 
 /** Inline Probability Progress Indicator */
 function ProbBar({ value }) {
-  const pct = Math.min(100, Math.max(0, value * 100));
+  const prob = typeof value === "number" ? value : Number(value) || 0;
+  const pct = Math.min(100, Math.max(0, prob * 100));
   const color = pct >= 70 ? "#dc2626" : pct >= 40 ? "#d97706" : "#16a34a";
   const tier = pct >= 70 ? "High" : pct >= 40 ? "Med" : "Low";
 
@@ -439,7 +451,7 @@ function ProbBar({ value }) {
         style={{
           flex: 1,
           height: 6,
-          background: "var(--theme-card-border)",
+          background: "var(--theme-card-border, #27272a)",
           borderRadius: 3,
           overflow: "hidden",
           position: "relative",
@@ -448,162 +460,251 @@ function ProbBar({ value }) {
         <div
           style={{
             height: "100%",
-            width: `${pct}%`,
-            background:
-              pct >= 70
-                ? "linear-gradient(90deg, #f59e0b, #ef4444)"
-                : pct >= 40
-                ? "linear-gradient(90deg, #22c55e, #f59e0b)"
-                : "#22c55e",
             borderRadius: 3,
-            transition: "width 0.4s ease",
+            width: `${pct}%`,
+            background: color,
+            transition: "width 0.3s ease",
           }}
         />
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 54 }}>
-        <span style={{ fontSize: 11, color, fontWeight: 700, fontFamily: "monospace" }}>{pct.toFixed(1)}%</span>
-        <span style={{ fontSize: 9, color: "var(--theme-text-muted)", textTransform: "uppercase" }}>({tier})</span>
-      </div>
+      <span style={{ fontSize: 11, fontFamily: "monospace", color, minWidth: 36, textAlign: "right", fontWeight: 700 }}>
+        {pct.toFixed(0)}%
+      </span>
+      <span
+        style={{
+          fontSize: 9,
+          fontWeight: 700,
+          color,
+          background: `${color}18`,
+          padding: "1px 5px",
+          borderRadius: 3,
+          textTransform: "uppercase",
+        }}
+      >
+        {tier}
+      </span>
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MAIN ANOMALY DETECTOR COMPONENT
+   MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function AnomalyDetector() {
-  const [mode, setMode] = useState("OFFLINE"); // "OFFLINE" | "ONLINE" | "HYBRID"
+  const [mode, setMode] = useState("HYBRID"); // "ONLINE" | "OFFLINE" | "HYBRID"
+  const [running, setRunning] = useState(true);
+  const [connected, setConnected] = useState({ ONLINE: null, OFFLINE: null });
+  const [lastPollTime, setLastPollTime] = useState(null);
 
-  // ── Offline RF state ─────────────────────────────────────────────────────
-  const [rfEvents, setRfEvents] = useState([]);
+  // Online IF state (Port 5001)
+  const [results, setResults] = useState({});
+  const [lastFeatures, setLastFeatures] = useState(null);
+
+  // Offline RF state (Port 5002)
+  const [rfResults, setRfResults] = useState({});
   const [rfStats, setRfStats] = useState(null);
-  const [rfHealth, setRfHealth] = useState(null);
-  const [rfRunning, setRfRunning] = useState(false);
+  const [rfEvents, setRfEvents] = useState([]);
   const [lastRfId, setLastRfId] = useState(0);
-  const rfIntervalRef = useRef(null);
-  const rfStatsIntervalRef = useRef(null);
 
-  // ── Online IF state (ODL Isolation Forest) ──────────────────────────────
-  const [ifResults, setIfResults] = useState({});
-  const [ifLastFeatures, setIfLastFeatures] = useState(null);
-  const [ifLog, setIfLog] = useState([]);
-  const [ifConnected, setIfConnected] = useState(null);
-  const [ifRunning, setIfRunning] = useState(false);
-  const ifIntervalRef = useRef(null);
+  // Flow stats cache for calculating ODL deltas
+  const prevFlowStatsRef = useRef({});
 
-  // ── Table Controls & Sorting ─────────────────────────────────────────────
+  // Mitigation state
+  const [blockMode, setBlockMode] = useState("surgical"); // "surgical" | "switch_wide"
+  const [blockedSwitches, setBlockedSwitches] = useState(new Set());
+  const [autoBlockedSwitches, setAutoBlockedSwitches] = useState(new Set());
+  const [mitigationLog, setMitigationLog] = useState([]);
+  const [autoBlockLog, setAutoBlockLog] = useState([]);
+  const [rollbackLoading, setRollbackLoading] = useState(false);
+
+  // Unified Event Log & Feed
+  const [log, setLog] = useState([]);
+
+  // Table Controls & Filtering
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [selectedState, setSelectedState] = useState("ALL");
-  const [isPaused, setIsPaused] = useState(false);
-  const [copiedIp, setCopiedIp] = useState(null);
-
-  // Sorting state (default by ID descending, strictly monotonic)
   const [sortField, setSortField] = useState("id");
   const [sortDir, setSortDir] = useState("desc");
+  const [copiedIp, setCopiedIp] = useState(null);
 
-  // ── Check RF health ──────────────────────────────────────────────────────
-  const checkRfHealth = useCallback(async () => {
-    try {
-      const res = await fetch(`${SERVER_URLS.OFFLINE}/health`);
-      if (res.ok) setRfHealth(await res.json());
-      else setRfHealth(null);
-    } catch {
-      setRfHealth(null);
-    }
-  }, []);
-
-  // ── Check IF health ──────────────────────────────────────────────────────
-  const checkIfHealth = useCallback(async () => {
-    try {
-      const res = await fetch(`${SERVER_URLS.ONLINE}/health`);
-      setIfConnected(res.ok);
-    } catch {
-      setIfConnected(false);
-    }
+  // ── Health checks ───────────────────────────────────────────────────────────
+  const checkHealth = useCallback(async () => {
+    const check = async (key, url) => {
+      try {
+        const res = await fetch(`${url}/health`);
+        setConnected((prev) => ({ ...prev, [key]: res.ok }));
+      } catch {
+        setConnected((prev) => ({ ...prev, [key]: false }));
+      }
+    };
+    await Promise.all([
+      check("ONLINE", SERVER_URLS.ONLINE),
+      check("OFFLINE", SERVER_URLS.OFFLINE),
+    ]);
   }, []);
 
   useEffect(() => {
-    checkRfHealth();
-    checkIfHealth();
-  }, [checkRfHealth, checkIfHealth]);
-
-  // ── Poll Recent RF Events ────────────────────────────────────────────────
-  const pollRfRecent = useCallback(async () => {
-    if (isPaused) return;
-    try {
-      const res = await fetch(`${SERVER_URLS.OFFLINE}/recent?since=${lastRfId}&limit=100`);
-      if (!res.ok) return;
-      const data = await res.json();
-
-      if (data.events && data.events.length > 0) {
-        setRfEvents((prev) => {
-          const maxPrevId = prev.length > 0 ? Math.max(...prev.map((e) => e.id)) : 0;
-          const firstNewId = data.events[0].id;
-
-          if (firstNewId <= maxPrevId && data.events.length > 0) {
-            return [...data.events].sort((a, b) => a.id - b.id).slice(-300);
-          }
-
-          const map = new Map();
-          prev.forEach((e) => map.set(e.id, e));
-          data.events.forEach((e) => map.set(e.id, e));
-
-          const merged = Array.from(map.values());
-          merged.sort((a, b) => a.id - b.id);
-          return merged.slice(-300);
-        });
-
-        setLastRfId(data.events[data.events.length - 1].id);
-      } else if (lastRfId > 0) {
-        const checkRes = await fetch(`${SERVER_URLS.OFFLINE}/recent?since=0&limit=10`);
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          if (checkData.events && checkData.events.length > 0 && checkData.events[0].id < lastRfId) {
-            setRfEvents(checkData.events.sort((a, b) => a.id - b.id));
-            setLastRfId(checkData.events[checkData.events.length - 1].id);
-          }
-        }
-      }
-    } catch (e) {
-      console.error("[RF poll]", e);
+    checkHealth();
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
     }
-  }, [lastRfId, isPaused]);
+  }, [checkHealth]);
 
-  // ── Poll RF Stats ────────────────────────────────────────────────────────
-  const pollRfStats = useCallback(async () => {
+  // ── Extract RF features from raw ODL inventory ──────────────────────────────
+  const extractRFFeatures = useCallback((rawOdl, switchId) => {
+    const nodes = rawOdl?.["opendaylight-inventory:nodes"]?.node ?? [];
+    const node = nodes.find((n) => n.id === switchId);
+    if (!node) return null;
+
+    let totalDeltaPkt = 0,
+      totalDeltaBytes = 0,
+      totalDeltaTime = 0,
+      flowCount = 0;
+    const now = Date.now() / 1000;
+
+    for (const table of node["flow-node-inventory:table"] ?? []) {
+      for (const flow of table["flow"] ?? []) {
+        const s = flow["opendaylight-flow-statistics:flow-statistics"] ?? {};
+        const pkt = parseInt(s["packet-count"] ?? s["packetCount"] ?? 0, 10);
+        const byt = parseInt(s["byte-count"] ?? s["byteCount"] ?? 0, 10);
+        const flowId = flow["id"];
+
+        if (pkt === 0 && byt === 0) continue;
+
+        const flowKey = `${switchId}:${flowId}`;
+        const prev = prevFlowStatsRef.current[flowKey];
+
+        prevFlowStatsRef.current[flowKey] = { packets: pkt, bytes: byt, ts: now };
+
+        if (prev === undefined) continue;
+
+        const deltaPkt = Math.max(0, pkt - prev.packets);
+        const deltaBytes = Math.max(0, byt - prev.bytes);
+        const deltaTime = Math.max(1, now - prev.ts);
+
+        if (deltaPkt === 0 && deltaBytes === 0) continue;
+
+        totalDeltaPkt += deltaPkt;
+        totalDeltaBytes += deltaBytes;
+        totalDeltaTime += deltaTime;
+        flowCount += 1;
+      }
+    }
+
+    if (flowCount === 0) return null;
+
+    const avgDeltaTime = totalDeltaTime / flowCount;
+
+    return {
+      src: switchId,
+      avg_pkt_size: totalDeltaPkt > 0 ? totalDeltaBytes / totalDeltaPkt : 0,
+      total_duration_sec: avgDeltaTime,
+      bytes_per_sec: totalDeltaBytes / avgDeltaTime,
+      tx_rx_byte_asymmetry: 1.0,
+      pktcount: totalDeltaPkt,
+      tx_bytes: totalDeltaBytes,
+    };
+  }, []);
+
+  // ── Online IF State Polling ─────────────────────────────────────────────────
+  const fetchState = useCallback(async () => {
     try {
-      const res = await fetch(`${SERVER_URLS.OFFLINE}/stats`);
-      if (res.ok) setRfStats(await res.json());
-    } catch {}
+      let res = await fetch(`${SERVER_URLS.ONLINE}/state`);
+      if (!res.ok) {
+        res = await fetch(`${SERVER_URLS.ONLINE}/analyze`);
+      }
+      if (!res.ok) {
+        setConnected((p) => ({ ...p, ONLINE: false }));
+        return;
+      }
+      const data = await res.json();
+      setConnected((p) => ({ ...p, ONLINE: true }));
+
+      // Handle alerts
+      const alerts = data.alerts ?? [];
+      if (alerts.length > 0) {
+        alerts.forEach((a) => {
+          if (Notification.permission === "granted") {
+            new Notification("DDoS Attack Detected", {
+              body: `${a.switch_id} — Confidence ${(a.rf_prob * 100).toFixed(0)}%`,
+              requireInteraction: true,
+            });
+          }
+        });
+        fetch(`${SERVER_URLS.ONLINE}/alerts/clear`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: alerts.map((a) => a.id) }),
+        }).catch(() => {});
+      }
+
+      const backendResults = data.results ?? {};
+      setResults(backendResults);
+
+      const allEntries = Object.values(backendResults).filter((r) => r.phase !== "SKIP");
+      const worstEntry = allEntries
+        .filter((r) => r.features)
+        .reduce((a, b) => {
+          if (!a) return b;
+          const aSev = a.state === "ATTACK" ? 3 : a.state === "SUSPICIOUS" ? 2 : a.state === "NORMAL" ? 1 : 0;
+          const bSev = b.state === "ATTACK" ? 3 : b.state === "SUSPICIOUS" ? 2 : b.state === "NORMAL" ? 1 : 0;
+          return bSev > aSev ? b : a;
+        }, null);
+
+      if (worstEntry?.features) {
+        setLastFeatures(worstEntry.features);
+      }
+
+      const nowTs = new Date().toLocaleTimeString();
+      const entries = allEntries.map((r, idx) => ({
+        id: Date.now() + idx,
+        switch_id: r.switch_id,
+        switch: r.switch_id,
+        state: r.state,
+        phase: r.phase,
+        attack_type: r.state === "ATTACK" ? "DDoS" : "Normal",
+        attack_prob: r.percentile != null ? (100 - r.percentile) / 100 : r.raw_score != null ? Math.min(1, Math.max(0, r.raw_score)) : 0,
+        raw_score: r.raw_score,
+        soft_anomaly: r.soft_anomaly,
+        hard_anomaly: r.hard_anomaly,
+        percentile: r.percentile,
+        network_severity: r.network_severity,
+        src_ip: r.attacking_host?.ip || "—",
+        dst_ip: "10.0.0.1",
+        protocol: "TCP",
+        _ts: nowTs,
+        _mode: "ONLINE",
+      }));
+
+      if (entries.length > 0) {
+        setLog((prev) => [...entries, ...prev].slice(0, 100));
+      }
+
+      // Auto-block reflection
+      const autoBlocks = data.auto_blocks ?? {};
+      const newAutoBlocked = Object.entries(autoBlocks)
+        .filter(([, blocked]) => blocked)
+        .map(([sid]) => sid);
+
+      if (newAutoBlocked.length > 0) {
+        setAutoBlockedSwitches(new Set(newAutoBlocked));
+        setBlockedSwitches((prev) => new Set([...prev, ...newAutoBlocked]));
+      }
+    } catch {
+      setConnected((p) => ({ ...p, ONLINE: false }));
+    }
   }, []);
 
-  const startRfPolling = useCallback(() => {
-    if (rfIntervalRef.current) return;
-    setRfRunning(true);
-    pollRfRecent();
-    pollRfStats();
-    rfIntervalRef.current = setInterval(pollRfRecent, POLL_MS_OFFLINE);
-    rfStatsIntervalRef.current = setInterval(pollRfStats, 3000);
-  }, [pollRfRecent, pollRfStats]);
-
-  const stopRfPolling = useCallback(() => {
-    clearInterval(rfIntervalRef.current);
-    clearInterval(rfStatsIntervalRef.current);
-    rfIntervalRef.current = null;
-    rfStatsIntervalRef.current = null;
-    setRfRunning(false);
-  }, []);
-
-  // ── Online IF Polling Engine ──────────────────────────────────────────────
-  const sendOnline = useCallback(async () => {
+  // ── Offline RF Polling (ODL Flow Delta Detection + Stats) ───────────────────
+  const sendOffline = useCallback(async () => {
     let rawOdl;
     try {
       rawOdl = await getNodes();
     } catch (err) {
-      console.error("sendOnline error:", err);
-      setIfConnected(false);
+      console.error("[sendOffline] getNodes failed:", err);
+      setConnected((p) => ({ ...p, OFFLINE: false }));
       return;
     }
 
@@ -611,114 +712,442 @@ export default function AnomalyDetector() {
     const ids = nodes
       .map((n) => n.id)
       .filter((id) => id && !id.startsWith("host:") && !id.includes(":LOCAL") && !/openflow:\d+:\d+$/.test(id));
+
     const targets = ids.length > 0 ? ids : ["global"];
-    const ts = new Date().toLocaleTimeString();
+    let atLeastOneSuccess = false;
+    const rfResultsLocal = {};
+    const nowTs = new Date().toLocaleTimeString();
 
     for (const sid of targets) {
+      const features = extractRFFeatures(rawOdl, sid);
+
+      if (!features) {
+        const normalData = {
+          src: sid,
+          switch_id: sid,
+          state: "NORMAL",
+          reason: "No active flows with traffic",
+          attack_prob: 0,
+          attack_type: "Normal",
+          rf_zone: "NORMAL",
+          features: {
+            avg_pkt_size: 0,
+            total_duration_sec: 0,
+            bytes_per_sec: 0,
+            tx_rx_byte_asymmetry: 0,
+            pktcount: 0,
+            tx_bytes: 0,
+          },
+        };
+        rfResultsLocal[sid] = normalData;
+        setRfResults((prev) => ({ ...prev, [sid]: normalData }));
+        continue;
+      }
+
       try {
-        const res = await fetch(`${SERVER_URLS.ONLINE}/detect`, {
+        const res = await fetch(`${SERVER_URLS.OFFLINE}/detect`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ switch_id: sid, raw_odl: rawOdl }),
+          body: JSON.stringify(features),
         });
+
         if (!res.ok) continue;
+
         const data = await res.json();
-        setIfResults((prev) => ({ ...prev, [sid]: data }));
-        setIfLastFeatures(data.features ?? null);
-        setIfLog((prev) => [{ ...data, _ts: ts, switch_id: sid }, ...prev.slice(0, 99)]);
-        setIfConnected(true);
+        const mergedData = {
+          ...data,
+          src: data.src || sid,
+          switch_id: data.src || sid,
+          features: data.features ?? features,
+        };
+
+        rfResultsLocal[mergedData.src] = mergedData;
+
+        setRfResults((prev) => {
+          const next = { ...prev, [mergedData.src]: mergedData };
+          const allVals = Object.values(next);
+          const worst = allVals.reduce((w, c) => {
+            const wSev = w?.state === "ATTACK" ? 3 : w?.state === "SUSPICIOUS" ? 2 : 1;
+            const cSev = c?.state === "ATTACK" ? 3 : c?.state === "SUSPICIOUS" ? 2 : 1;
+            return cSev > wSev ? c : w;
+          }, allVals[0]);
+          setLastFeatures(worst?.features ?? null);
+          return next;
+        });
+
+        // Determine attack category name
+        const stateKey = mergedData.state;
+        const attackName =
+          typeof stateKey === "number"
+            ? ATTACK_TYPES[stateKey]?.name || "Normal"
+            : mergedData.attack_type || (mergedData.is_attack ? "DDoS" : "Normal");
+
+        const logItem = {
+          id: Date.now() + Math.floor(Math.random() * 1000),
+          switch: mergedData.src,
+          switch_id: mergedData.src,
+          state: mergedData.state === 0 || mergedData.state === "NORMAL" ? "NORMAL" : "ATTACK",
+          attack_type: attackName,
+          attack_prob: mergedData.attack_prob ?? 0,
+          rf_zone: mergedData.rf_zone ?? "benign",
+          src_ip: mergedData.src_ip || "10.0.0.5",
+          dst_ip: mergedData.dst_ip || "10.0.0.1",
+          protocol: mergedData.protocol || "TCP",
+          _ts: nowTs,
+          _mode: "OFFLINE",
+        };
+
+        setLog((prev) => [logItem, ...prev.slice(0, 99)]);
+        atLeastOneSuccess = true;
       } catch (err) {
-        console.error("IF poll error:", err);
+        console.error(`[sendOffline] fetch failed for ${sid}:`, err);
       }
     }
-  }, []);
 
-  const startIfPolling = useCallback(() => {
-    if (ifIntervalRef.current) return;
-    setIfRunning(true);
-    sendOnline();
-    ifIntervalRef.current = setInterval(sendOnline, POLL_MS_ONLINE);
-  }, [sendOnline]);
+    if (atLeastOneSuccess) {
+      setConnected((p) => ({ ...p, OFFLINE: true }));
+    }
 
-  const stopIfPolling = useCallback(() => {
-    clearInterval(ifIntervalRef.current);
-    ifIntervalRef.current = null;
-    setIfRunning(false);
-  }, []);
-
-  // Mode Switch
-  const switchMode = (m) => {
-    if (m === mode) return;
-    stopRfPolling();
-    stopIfPolling();
-    setMode(m);
-  };
-
-  useEffect(() => {
-    if (mode === "OFFLINE") {
-      startRfPolling();
-      return () => stopRfPolling();
-    } else if (mode === "ONLINE") {
-      startIfPolling();
-      return () => stopIfPolling();
-    } else if (mode === "HYBRID") {
-      startRfPolling();
-      startIfPolling();
-      return () => {
-        stopRfPolling();
-        stopIfPolling();
+    // Cross-feed RF scores to Online IF engine
+    const rfScorePayload = {};
+    for (const [sid, data] of Object.entries(rfResultsLocal)) {
+      rfScorePayload[sid] = {
+        attack_prob: data.attack_prob ?? 0,
+        rf_zone: data.rf_zone ?? "benign",
+        state: data.state ?? "NORMAL",
       };
     }
-  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (Object.keys(rfScorePayload).length > 0) {
+      fetch(`${SERVER_URLS.ONLINE}/rf-scores`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rfScorePayload),
+      }).catch(() => {});
+    }
 
-  useEffect(
-    () => () => {
-      clearInterval(rfIntervalRef.current);
-      clearInterval(rfStatsIntervalRef.current);
-      clearInterval(ifIntervalRef.current);
-    },
-    []
-  );
+    // Optionally poll RF stats & recent window for timeline visualization
+    try {
+      const statsRes = await fetch(`${SERVER_URLS.OFFLINE}/stats`);
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        setRfStats(statsData);
+      }
+    } catch {}
+  }, [extractRFFeatures]);
 
-  // ── Reset Handler ────────────────────────────────────────────────────────
+  // ── Unified Refresh / Query Once ───────────────────────────────────────────
+  const handleRefresh = useCallback(async () => {
+    checkHealth();
+    if (mode === "ONLINE" || mode === "HYBRID") {
+      await fetchState();
+    }
+    if (mode === "OFFLINE" || mode === "HYBRID") {
+      await sendOffline();
+    }
+    setLastPollTime(Date.now());
+  }, [fetchState, sendOffline, mode, checkHealth]);
+
+  // ── Unified Polling Loop ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!running) return;
+
+    const tick = () => {
+      checkHealth();
+      if (mode === "ONLINE" || mode === "HYBRID") fetchState();
+      if (mode === "OFFLINE" || mode === "HYBRID") sendOffline();
+      setLastPollTime(Date.now());
+    };
+
+    tick();
+    const interval = setInterval(tick, POLL_MS);
+    return () => clearInterval(interval);
+  }, [running, mode, fetchState, sendOffline, checkHealth]);
+
+  // ── Mode Switch ────────────────────────────────────────────────────────────
+  const switchMode = (newMode) => {
+    setMode(newMode);
+    if (newMode === "ONLINE") {
+      setRfResults({});
+      prevFlowStatsRef.current = {};
+    } else if (newMode === "OFFLINE") {
+      setResults({});
+      setLastFeatures(null);
+      prevFlowStatsRef.current = {};
+    } else if (newMode === "HYBRID") {
+      prevFlowStatsRef.current = {};
+    }
+  };
+
+  // ── Reset Handler ──────────────────────────────────────────────────────────
   const handleReset = async () => {
-    stopRfPolling();
-    stopIfPolling();
+    setRunning(false);
     try {
-      await fetch(`${SERVER_URLS.OFFLINE}/recent/clear`, { method: "POST" });
+      if (mode === "ONLINE" || mode === "HYBRID") {
+        await fetch(`${SERVER_URLS.ONLINE}/reset`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+      }
     } catch {}
     try {
-      await fetch(`${SERVER_URLS.OFFLINE}/metrics/reset`, { method: "POST" });
+      if (mode === "OFFLINE" || mode === "HYBRID") {
+        await fetch(`${SERVER_URLS.OFFLINE}/reset`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        await fetch(`${SERVER_URLS.OFFLINE}/recent/clear`, { method: "POST" });
+        await fetch(`${SERVER_URLS.OFFLINE}/metrics/reset`, { method: "POST" });
+      }
     } catch {}
+
+    setResults({});
+    setRfResults({});
+    setLastFeatures(null);
+    setLog([]);
+    setBlockedSwitches(new Set());
+    setAutoBlockedSwitches(new Set());
+    setMitigationLog([]);
+    setAutoBlockLog([]);
+    prevFlowStatsRef.current = {};
+    checkHealth();
+    setRunning(true);
+  };
+
+  // ── Derived State & Classifications ────────────────────────────────────────
+  const allIFResults = Object.values(results);
+  const worstIFResult =
+    allIFResults.length > 0
+      ? allIFResults.reduce((worst, current) => {
+          const wSev = worst?.state === "ATTACK" ? 3 : worst?.state === "SUSPICIOUS" ? 2 : worst?.state === "NORMAL" ? 1 : 0;
+          const cSev = current?.state === "ATTACK" ? 3 : current?.state === "SUSPICIOUS" ? 2 : current?.state === "NORMAL" ? 1 : 0;
+          return cSev > wSev ? current : worst;
+        })
+      : null;
+
+  const allRFResults = Object.values(rfResults);
+  const worstRFResult =
+    allRFResults.length > 0
+      ? allRFResults.reduce((worst, current) => {
+          const wSev = worst?.state === "ATTACK" ? 3 : worst?.state === "SUSPICIOUS" ? 2 : worst?.state === "NORMAL" ? 1 : 0;
+          const cSev = current?.state === "ATTACK" ? 3 : current?.state === "SUSPICIOUS" ? 2 : current?.state === "NORMAL" ? 1 : 0;
+          return cSev > wSev ? current : worst;
+        }, allRFResults[0])
+      : null;
+
+  const isIFAttack = allIFResults.some((r) => r.state === "ATTACK");
+  const isIFSuspicious = allIFResults.some((r) => r.state === "SUSPICIOUS") && !isIFAttack;
+
+  const isRFAttack = allRFResults.some((r) => r.state === "ATTACK" || (typeof r.state === "number" && r.state > 0));
+  const isRFSuspicious = allRFResults.some((r) => r.state === "SUSPICIOUS") && !isRFAttack;
+
+  const isAttack =
+    mode === "ONLINE" ? isIFAttack : mode === "OFFLINE" ? isRFAttack : isIFAttack || isRFAttack;
+
+  const isSuspicious =
+    mode === "ONLINE"
+      ? isIFSuspicious
+      : mode === "OFFLINE"
+      ? isRFSuspicious
+      : (isIFSuspicious || isRFSuspicious) && !isAttack;
+
+  // Smart Authorization for Quarantine
+  const canBlock = useMemo(() => {
+    const ifPhase = worstIFResult?.phase ?? null;
+    const ifInDetection = ifPhase === "DETECTION";
+    const ifAttack = allIFResults.some((r) => r.state === "ATTACK");
+    const ifHardAnomaly = allIFResults.some((r) => r.hard_anomaly === true);
+    const rfAttack = allRFResults.some((r) => r.state === "ATTACK" || (typeof r.state === "number" && r.state > 0));
+    const rfHighConf = allRFResults.some((r) => (r.attack_prob ?? 0) >= 0.85);
+
+    if (ifInDetection && ifAttack && rfAttack) return true;
+    if (rfHighConf) return true;
+    if (!ifInDetection && rfAttack) return true;
+    if (ifInDetection && ifHardAnomaly) return true;
+    return false;
+  }, [worstIFResult, allIFResults, allRFResults]);
+
+  // ── Auto-Block Trigger ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (mode !== "HYBRID") return;
+
+    const ifAttacks = allIFResults.filter((r) => r.state === "ATTACK").map((r) => r.switch_id);
+    const rfAttacks = allRFResults.filter(
+      (r) => (r.state === "ATTACK" || (typeof r.state === "number" && r.state > 0)) && r.attack_prob >= AUTO_BLOCK_RF_THRESHOLD
+    );
+
+    const rfAttackMap = new Map(rfAttacks.map((r) => [r.src, r]));
+
+    for (const sid of ifAttacks) {
+      if (rfAttackMap.has(sid) && !blockedSwitches.has(sid) && !autoBlockedSwitches.has(sid)) {
+        window.dispatchEvent(new CustomEvent("autoblock", { detail: { switch_id: sid } }));
+
+        if (Notification.permission === "granted") {
+          new Notification("SDN Auto-Block Triggered", {
+            body: `Switch ${sid} was automatically isolated due to high confidence attack.`,
+          });
+        }
+
+        fetch(`${SERVER_URLS.ONLINE}/auto-block/trigger`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ switch_id: sid }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.status === "auto_blocked" || data.status === "already_blocked") {
+              setAutoBlockedSwitches((prev) => new Set([...prev, sid]));
+              setBlockedSwitches((prev) => new Set([...prev, sid]));
+              setAutoBlockLog((prev) => [
+                {
+                  ts: new Date().toLocaleTimeString(),
+                  switch_id: sid,
+                  prob: rfAttackMap.get(sid).attack_prob,
+                },
+                ...prev,
+              ]);
+            }
+          })
+          .catch((err) => console.error("[AutoBlock] Failed:", err));
+      }
+    }
+  }, [allIFResults, allRFResults, mode, blockedSwitches, autoBlockedSwitches]);
+
+  // ── Mitigation Actions ─────────────────────────────────────────────────────
+  const handleBlock = useCallback(async () => {
+    const worstIF = Object.values(results ?? {})
+      .filter((r) => r.state === "ATTACK")
+      .sort((a, b) => (a.raw_score ?? 0) - (b.raw_score ?? 0))[0];
+
+    const worstRF = Object.values(rfResults ?? {})
+      .filter((r) => r.state === "ATTACK" || (typeof r.state === "number" && r.state > 0))
+      .sort((a, b) => (b.attack_prob ?? 0) - (a.attack_prob ?? 0))[0];
+
+    const targetSwitch = worstIF?.switch_id ?? worstRF?.src;
+    if (!targetSwitch || blockedSwitches.has(targetSwitch)) return;
+
     try {
-      await fetch(`${SERVER_URLS.ONLINE}/reset`, {
+      let res;
+      if (blockMode === "surgical") {
+        const attackingHost = worstIF?.attacking_host;
+        if (!attackingHost) {
+          console.warn("[BLOCK] No attacking host identified — falling back to switch-wide");
+          res = await fetch(`${SERVER_URLS.ONLINE}/mitigation/block`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ switch_id: targetSwitch, block_type: "switch_wide" }),
+          });
+        } else {
+          res = await fetch(`${SERVER_URLS.ONLINE}/mitigation/block-host`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              switch_id: targetSwitch,
+              src_ip: attackingHost.ip,
+              src_mac: attackingHost.mac,
+            }),
+          });
+        }
+      } else {
+        res = await fetch(`${SERVER_URLS.ONLINE}/mitigation/block`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ switch_id: targetSwitch, block_type: "switch_wide" }),
+        });
+      }
+
+      const data = await res.json();
+      if (data.success) {
+        setBlockedSwitches((prev) => new Set([...prev, targetSwitch]));
+        setMitigationLog((prev) => [
+          {
+            ts: new Date().toLocaleTimeString(),
+            action: "BLOCKED",
+            switch_id: targetSwitch,
+            flow_id: data.flow_id,
+            block_type: data.action ?? blockMode,
+            src_ip: data.src_ip ?? null,
+          },
+          ...prev,
+        ]);
+      }
+    } catch (err) {
+      console.error("[BLOCK] Failed:", err);
+    }
+  }, [results, rfResults, blockedSwitches, blockMode]);
+
+  const handleRollback = useCallback(async () => {
+    setRollbackLoading(true);
+    try {
+      const res = await fetch(`${SERVER_URLS.ONLINE}/mitigation/rollback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
-    } catch {}
-    setRfEvents([]);
-    setRfStats(null);
-    setLastRfId(0);
-    setIfResults({});
-    setIfLastFeatures(null);
-    setIfLog([]);
-    checkRfHealth();
-    checkIfHealth();
-  };
+      const data = await res.json();
+      const resultsList = data.results || (data.success ? [{ switch_id: "all", success: true }] : []);
+      const failed = resultsList.filter((r) => !r.success).map((r) => r.switch_id || "unknown");
+      const succeeded = resultsList.filter((r) => r.success).map((r) => r.switch_id || "all");
 
-  const handleClearRecent = async () => {
-    try {
-      await fetch(`${SERVER_URLS.OFFLINE}/recent/clear`, { method: "POST" });
-    } catch (e) {
-      console.error("[Clear recent error]", e);
+      setBlockedSwitches(new Set(failed));
+      setMitigationLog((prev) => [
+        {
+          ts: new Date().toLocaleTimeString(),
+          action: failed.length > 0 ? "ROLLBACK_PARTIAL" : "ROLLBACK",
+          cleaned: succeeded,
+          failed: failed,
+          results: resultsList,
+        },
+        ...prev,
+      ]);
+    } catch (err) {
+      console.error("[ROLLBACK] Failed:", err);
+    } finally {
+      setRollbackLoading(false);
     }
-    setRfEvents([]);
-    setLastRfId(0);
-    pollRfStats();
+  }, []);
+
+  // ── Baseline Training Progress ─────────────────────────────────────────────
+  const isBaseline = allIFResults.length > 0 && allIFResults.every((r) => r.phase === "BASELINE");
+  const bCollected = worstIFResult?.collected || 0;
+  const bTotal = bCollected + (worstIFResult?.remaining || 100);
+  const bPct = Math.min(100, (bCollected / bTotal) * 100);
+
+  // Status mapping for Threat Matrix
+  const getUIStateKey = () => {
+    if (mode === "ONLINE") {
+      return worstIFResult?.state ?? "NORMAL";
+    } else if (mode === "OFFLINE") {
+      return worstRFResult?.state ?? 0;
+    } else {
+      const ifScore = worstIFResult?.state === "ATTACK" ? 3 : worstIFResult?.state === "SUSPICIOUS" ? 2 : 1;
+      const rfState = worstRFResult?.state;
+      const rfScore = rfState === "ATTACK" || (typeof rfState === "number" && rfState > 0) ? 3 : worstRFResult?.state === "SUSPICIOUS" ? 2 : 1;
+      return ifScore >= rfScore ? worstIFResult?.state ?? "NORMAL" : rfState ?? 0;
+    }
   };
 
-  // ── Column Sorting Toggle Handler ────────────────────────────────────────
+  const statusKey = getUIStateKey();
+  const statusDetails = ATTACK_TYPES[statusKey] || ATTACK_TYPES["NORMAL"];
+
+  // Hybrid Threat Metrics
+  const latestIFScore = worstIFResult?.raw_score ?? 0.15;
+  const latestRFProb = worstRFResult?.attack_prob ?? (rfStats?.recent_window?.length > 0 ? rfStats.recent_window[rfStats.recent_window.length - 1].prob : 0.0);
+  const hybridScore = Math.min(1.0, 0.4 * latestIFScore + 0.6 * latestRFProb);
+  const isModelConsensus = (latestIFScore >= 0.35 && latestRFProb >= 0.4) || (latestIFScore < 0.35 && latestRFProb < 0.4);
+
+  const threatLevel = isAttack ? "CRITICAL" : isSuspicious ? "HIGH" : hybridScore >= 0.3 ? "MEDIUM" : "NONE";
+  const tc = THREAT_CONFIG[threatLevel] || THREAT_CONFIG.NONE;
+
+  // ── Table Filtering & Monotonic Sorting ────────────────────────────────────
+  const handleCopyIp = (ip) => {
+    if (!ip || ip === "—") return;
+    navigator.clipboard.writeText(ip);
+    setCopiedIp(ip);
+    setTimeout(() => setCopiedIp(null), 2000);
+  };
+
   const handleSort = (field) => {
     if (sortField === field) {
       setSortDir(sortDir === "desc" ? "asc" : "desc");
@@ -728,53 +1157,20 @@ export default function AnomalyDetector() {
     }
   };
 
-  // ── Copy IP Helper ───────────────────────────────────────────────────────
-  const handleCopyIp = (ip) => {
-    if (!ip || ip === "—") return;
-    navigator.clipboard.writeText(ip);
-    setCopiedIp(ip);
-    setTimeout(() => setCopiedIp(null), 2000);
-  };
-
-  // ── Export Filtered Events to CSV ────────────────────────────────────────
-  const handleExportCSV = () => {
-    if (filteredEvents.length === 0) return;
-    const headers = ["ID,State,Attack_Category,Probability,Protocol,Source_IP,Destination_IP,Switch"];
-    const rows = filteredEvents.map(
-      (e) =>
-        `${e.id},${e.state},${e.attack_type || "Normal"},${e.attack_prob},${e.protocol || ""},${e.src_ip || ""},${
-          e.dst_ip || ""
-        },${e.switch || ""}`
-    );
-    const blob = new Blob([[headers, ...rows].join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `sdn_detection_feed_${new Date().toISOString().slice(0, 19)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // ── Derived Stats & Category Counts ──────────────────────────────────────
   const categoryCounts = useMemo(() => {
-    const counts = { ALL: rfEvents.length, DDoS: 0, DoS: 0, Probe: 0, Brute_Force: 0, Botnet: 0, Normal: 0 };
-    rfEvents.forEach((e) => {
-      const cat = e.attack_type || (e.is_attack ? "DDoS" : "Normal");
+    const counts = { ALL: log.length, DDoS: 0, DoS: 0, "Port Scan": 0, Probe: 0, Brute_Force: 0, Botnet: 0, Normal: 0 };
+    log.forEach((e) => {
+      const cat = e.attack_type || (e.state === "ATTACK" ? "DDoS" : "Normal");
       if (counts[cat] !== undefined) counts[cat]++;
     });
     return counts;
-  }, [rfEvents]);
+  }, [log]);
 
-  // ── Strict Filtering & Monotonic Sorting Engine ──────────────────────────
   const filteredEvents = useMemo(() => {
-    const uniqueMap = new Map();
-    rfEvents.forEach((e) => {
-      if (e && e.id != null) uniqueMap.set(e.id, e);
-    });
-    let result = Array.from(uniqueMap.values());
+    let result = [...log];
 
     if (selectedCategory !== "ALL") {
-      result = result.filter((e) => (e.attack_type || (e.is_attack ? "DDoS" : "Normal")) === selectedCategory);
+      result = result.filter((e) => (e.attack_type || (e.state === "ATTACK" ? "DDoS" : "Normal")) === selectedCategory);
     }
 
     if (selectedState !== "ALL") {
@@ -786,11 +1182,12 @@ export default function AnomalyDetector() {
       result = result.filter(
         (e) =>
           String(e.id).includes(q) ||
+          (e.switch_id && e.switch_id.toLowerCase().includes(q)) ||
+          (e.switch && e.switch.toLowerCase().includes(q)) ||
           (e.src_ip && e.src_ip.toLowerCase().includes(q)) ||
           (e.dst_ip && e.dst_ip.toLowerCase().includes(q)) ||
           (e.attack_type && e.attack_type.toLowerCase().includes(q)) ||
           (e.protocol && e.protocol.toLowerCase().includes(q)) ||
-          (e.switch && e.switch.toLowerCase().includes(q)) ||
           (e.state && e.state.toLowerCase().includes(q))
       );
     }
@@ -799,12 +1196,9 @@ export default function AnomalyDetector() {
       let valA = a[sortField];
       let valB = b[sortField];
 
-      if (sortField === "id" || sortField === "attack_prob") {
+      if (sortField === "id" || sortField === "attack_prob" || sortField === "raw_score") {
         valA = Number(valA || 0);
         valB = Number(valB || 0);
-      } else if (sortField === "attack_type") {
-        valA = String(valA || (a.is_attack ? "DDoS" : "Normal")).toLowerCase();
-        valB = String(valB || (b.is_attack ? "DDoS" : "Normal")).toLowerCase();
       } else {
         valA = String(valA || "").toLowerCase();
         valB = String(valB || "").toLowerCase();
@@ -816,48 +1210,55 @@ export default function AnomalyDetector() {
     });
 
     return result;
-  }, [rfEvents, selectedCategory, selectedState, searchQuery, sortField, sortDir]);
+  }, [log, selectedCategory, selectedState, searchQuery, sortField, sortDir]);
 
-  // OFFLINE RF derived
-  const threat = rfStats?.threat_level || "NONE";
-  const tc = THREAT_CONFIG[threat] || THREAT_CONFIG.NONE;
-  const ThreatIcon = tc.icon;
-
-  // ONLINE IF derived
-  const allIFResults = Object.values(ifResults);
-  const worstIF =
-    allIFResults.length > 0
-      ? allIFResults.reduce((w, c) => {
-          const ws = w?.state === "ATTACK" ? 3 : w?.state === "SUSPICIOUS" ? 2 : 1;
-          const cs = c?.state === "ATTACK" ? 3 : c?.state === "SUSPICIOUS" ? 2 : 1;
-          return cs > ws ? c : w;
-        })
-      : null;
-  const isIFAttack = allIFResults.some((r) => r.state === "ATTACK");
-  const isIFSuspicious = allIFResults.some((r) => r.state === "SUSPICIOUS") && !isIFAttack;
-  const ifThreat = isIFAttack ? "HIGH" : isIFSuspicious ? "MEDIUM" : "NONE";
-  const ifTc = THREAT_CONFIG[ifThreat] || THREAT_CONFIG.NONE;
-  const IfThreatIcon = ifTc.icon;
-
-  // HYBRID derived metrics
-  const latestIFScore = worstIF?.raw_score ?? 0.15;
-  const latestRFProb = rfStats?.recent_window?.length > 0 ? rfStats.recent_window[rfStats.recent_window.length - 1].prob : 0.0;
-  const hybridScore = Math.min(1.0, 0.4 * latestIFScore + 0.6 * latestRFProb);
-  const hybridThreatLevel = hybridScore >= 0.70 ? "CRITICAL" : hybridScore >= 0.45 ? "HIGH" : hybridScore >= 0.25 ? "MEDIUM" : "NONE";
-  const hybridTc = THREAT_CONFIG[hybridThreatLevel] || THREAT_CONFIG.NONE;
-  const HybridIcon = hybridTc.icon;
-
-  const isModelConsensus = (latestIFScore >= 0.35 && latestRFProb >= 0.40) || (latestIFScore < 0.35 && latestRFProb < 0.40);
+  const handleExportCSV = () => {
+    if (filteredEvents.length === 0) return;
+    const headers = ["Timestamp,Mode,Switch,State,Attack_Category,Certainty,Protocol,Source_IP,Destination_IP"];
+    const rows = filteredEvents.map(
+      (e) =>
+        `${e._ts || ""},${e._mode || ""},${e.switch_id || e.switch || ""},${e.state || ""},${e.attack_type || "Normal"},${
+          e.attack_prob != null ? e.attack_prob : e.raw_score || 0
+        },${e.protocol || ""},${e.src_ip || ""},${e.dst_ip || ""}`
+    );
+    const blob = new Blob([[headers, ...rows].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sdn_anomaly_telemetry_${new Date().toISOString().slice(0, 19)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const renderSortIcon = (field) => {
-    if (sortField !== field) return <ArrowUpDown size={12} style={{ color: "var(--theme-text-muted)" }} />;
+    if (sortField !== field) return <ArrowUpDown size={12} style={{ color: "var(--theme-text-muted, #71717a)" }} />;
     return sortDir === "desc" ? <ArrowDown size={12} style={{ color: "#8b5cf6" }} /> : <ArrowUp size={12} style={{ color: "#8b5cf6" }} />;
   };
 
   return (
-    <div style={{ minHeight: "100vh", padding: "24px 32px 48px", background: "var(--theme-bg)", color: "var(--theme-fg)" }} className="max-w-7xl mx-auto space-y-6">
-      {/* ── Top Header Navigation & Mode Selector ────────────────────────────── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14 }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        padding: "24px 32px 48px",
+        background: "var(--theme-bg, #09090b)",
+        color: "var(--theme-fg, #fafafa)",
+      }}
+      className="max-w-7xl mx-auto space-y-6 select-none font-sans antialiased"
+    >
+      <style dangerouslySetInnerHTML={{ __html: customStyles }} />
+
+      {/* ── Top Header Navigation & Action Bar ─────────────────────────────── */}
+      <div
+        style={{
+          ...S.glass,
+          padding: "16px 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 14,
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div
             style={{
@@ -875,30 +1276,29 @@ export default function AnomalyDetector() {
             <ShieldAlert size={24} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "var(--theme-fg)", letterSpacing: "-0.02em" }}>
-              Anomaly Detection Dashboard
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "var(--theme-fg, #fafafa)", letterSpacing: "-0.02em" }}>
+              Anomaly Detection & Active Defense
             </h1>
-            <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--theme-text-muted)" }}>
-              Multi-Layer Defense System (Isolation Forest + Multi-Class RF)
+            <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--theme-text-muted, #71717a)" }}>
+              Dual-Engine Orchestration (Isolation Forest + Supervised 5-Class RF)
             </p>
           </div>
-        </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Mode Switcher Tabs */}
+          {/* Mode Switcher Buttons */}
           <div
             style={{
               display: "flex",
               borderRadius: 12,
               padding: 3,
-              background: "var(--theme-card)",
-              border: "1px solid var(--theme-card-border)",
+              background: "var(--theme-bg, #09090b)",
+              border: "1px solid var(--theme-card-border, #27272a)",
+              marginLeft: 8,
             }}
           >
             {[
-              { key: "OFFLINE", label: "RF Multi-Class", color: "#8b5cf6", icon: Cpu },
-              { key: "ONLINE", label: "Online IF", color: "#0284c7", icon: Server },
-              { key: "HYBRID", label: "Hybrid Ensemble ⚡", color: "#ea580c", icon: GitMerge },
+              { key: "ONLINE", label: "Online IF", icon: Server, color: "#0284c7" },
+              { key: "OFFLINE", label: "Offline RF", icon: Cpu, color: "#10b981" },
+              { key: "HYBRID", label: "Hybrid Ensemble ⚡", icon: GitMerge, color: "#ea580c" },
             ].map((m) => {
               const IconComp = m.icon;
               const active = mode === m.key;
@@ -906,20 +1306,20 @@ export default function AnomalyDetector() {
                 <button
                   key={m.key}
                   onClick={() => switchMode(m.key)}
+                  className="btn-reactive"
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    padding: "7px 14px",
+                    padding: "6px 13px",
                     fontSize: 12,
                     fontWeight: 700,
                     borderRadius: 9,
                     border: "none",
                     cursor: "pointer",
                     background: active ? m.color : "transparent",
-                    color: active ? "#ffffff" : "var(--theme-text-muted)",
-                    boxShadow: active ? `0 4px 14px ${m.color}55` : "none",
-                    transition: "all 0.2s ease",
+                    color: active ? "#ffffff" : "var(--theme-text-muted, #71717a)",
+                    boxShadow: active ? `0 2px 10px ${m.color}66` : "none",
                   }}
                 >
                   <IconComp size={14} />
@@ -928,57 +1328,1187 @@ export default function AnomalyDetector() {
               );
             })}
           </div>
+        </div>
 
-          {/* Health Indicator */}
-          <div
+        {/* Polling & Health Controls */}
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          {/* Dual Independent Health Indicators */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                padding: "4px 10px",
+                borderRadius: 9999,
+                background:
+                  connected.ONLINE === null
+                    ? "rgba(113,113,122,0.12)"
+                    : connected.ONLINE
+                    ? "rgba(34,197,94,0.14)"
+                    : "rgba(239,68,68,0.14)",
+                color:
+                  connected.ONLINE === null
+                    ? "#71717a"
+                    : connected.ONLINE
+                    ? "#22c55e"
+                    : "#ef4444",
+                border: `1px solid ${
+                  connected.ONLINE === null
+                    ? "rgba(113,113,122,0.25)"
+                    : connected.ONLINE
+                    ? "rgba(34,197,94,0.3)"
+                    : "rgba(239,68,68,0.3)"
+                }`,
+              }}
+              title={`IF Engine — ${SERVER_URLS.ONLINE}/health`}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: connected.ONLINE ? "#22c55e" : connected.ONLINE === null ? "#71717a" : "#ef4444",
+                  boxShadow: connected.ONLINE ? "0 0 6px #22c55e" : "none",
+                }}
+              />
+              IF {connected.ONLINE === null ? "…" : connected.ONLINE ? "Live (5001)" : "Down"}
+            </span>
+
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                padding: "4px 10px",
+                borderRadius: 9999,
+                background:
+                  connected.OFFLINE === null
+                    ? "rgba(113,113,122,0.12)"
+                    : connected.OFFLINE
+                    ? "rgba(34,197,94,0.14)"
+                    : "rgba(239,68,68,0.14)",
+                color:
+                  connected.OFFLINE === null
+                    ? "#71717a"
+                    : connected.OFFLINE
+                    ? "#22c55e"
+                    : "#ef4444",
+                border: `1px solid ${
+                  connected.OFFLINE === null
+                    ? "rgba(113,113,122,0.25)"
+                    : connected.OFFLINE
+                    ? "rgba(34,197,94,0.3)"
+                    : "rgba(239,68,68,0.3)"
+                }`,
+              }}
+              title={`RF Engine — ${SERVER_URLS.OFFLINE}/health`}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: connected.OFFLINE ? "#22c55e" : connected.OFFLINE === null ? "#71717a" : "#ef4444",
+                  boxShadow: connected.OFFLINE ? "0 0 6px #22c55e" : "none",
+                }}
+              />
+              RF {connected.OFFLINE === null ? "…" : connected.OFFLINE ? "Live (5002)" : "Down"}
+            </span>
+          </div>
+
+          {lastPollTime && (
+            <span style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)", fontFamily: "monospace" }}>
+              Poll: {new Date(lastPollTime).toLocaleTimeString()}
+            </span>
+          )}
+
+          {/* Continuous Run / Pause Toggle */}
+          <button
+            onClick={() => setRunning(!running)}
+            className="btn-reactive"
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              gap: 6,
               padding: "7px 14px",
               borderRadius: 10,
-              background: "var(--theme-card)",
-              border: "1px solid var(--theme-card-border)",
+              fontSize: 12,
+              fontWeight: 700,
+              border: "none",
+              cursor: "pointer",
+              background: running ? "#dc2626" : "#4f46e5",
+              color: "#fff",
+              boxShadow: running ? "0 2px 10px rgba(220,38,38,0.3)" : "0 2px 10px rgba(79,70,229,0.3)",
             }}
           >
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background:
-                  mode === "HYBRID"
-                    ? rfHealth && ifConnected
-                      ? "#22c55e"
-                      : "#f59e0b"
-                    : mode === "OFFLINE"
-                    ? rfHealth
-                      ? "#22c55e"
-                      : "#ef4444"
-                    : ifConnected
-                    ? "#22c55e"
-                    : "#ef4444",
-                boxShadow: "0 0 10px #22c55e",
-              }}
-            />
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--theme-fg)" }}>
-              {mode === "HYBRID"
-                ? rfHealth && ifConnected
-                  ? "Hybrid Dual Engines Active"
-                  : "Partial Engine Health"
-                : mode === "OFFLINE"
-                ? rfHealth
-                  ? "RF Detector Online"
-                  : "RF Offline"
-                : ifConnected
-                ? "IF Engine Online"
-                : "IF Offline"}
-            </span>
-          </div>
+            {running ? <Pause size={14} /> : <Play size={14} />}
+            {running ? "Pause Telemetry" : "Run Continuous"}
+          </button>
+
+          {/* Query Once Button */}
+          <button
+            onClick={handleRefresh}
+            className="btn-reactive"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "7px 14px",
+              borderRadius: 10,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              background: "var(--theme-card, #18181b)",
+              border: "1px solid var(--theme-card-border, #27272a)",
+              color: "var(--theme-fg, #fafafa)",
+            }}
+          >
+            <RefreshCw size={14} /> Query Once
+          </button>
+
+          {/* Reset / Clear State Button */}
+          <button
+            onClick={handleReset}
+            className="btn-reactive"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "7px 14px",
+              borderRadius: 10,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              background: "rgba(217,119,6,0.12)",
+              border: "1px solid rgba(217,119,6,0.3)",
+              color: "#f59e0b",
+            }}
+          >
+            <Trash2 size={14} /> Clear State
+          </button>
         </div>
       </div>
 
-      {/* ── Toast Notification for IP Copy ───────────────────────────────────── */}
+      {/* ── Mode Info Ribbon ──────────────────────────────────────────────── */}
+      <div
+        style={{
+          fontSize: 12,
+          padding: "10px 18px",
+          borderRadius: 12,
+          border: `1px solid ${
+            mode === "ONLINE"
+              ? "rgba(2,132,199,0.25)"
+              : mode === "OFFLINE"
+              ? "rgba(16,185,129,0.25)"
+              : "rgba(168,85,247,0.25)"
+          }`,
+          background:
+            mode === "ONLINE"
+              ? "rgba(2,132,199,0.08)"
+              : mode === "OFFLINE"
+              ? "rgba(16,185,129,0.08)"
+              : "rgba(168,85,247,0.08)",
+          color:
+            mode === "ONLINE"
+              ? "#38bdf8"
+              : mode === "OFFLINE"
+              ? "#34d399"
+              : "#c084fc",
+        }}
+      >
+        {mode === "ONLINE" ? (
+          <p style={{ margin: 0 }}>
+            <strong>Online Isolation Forest:</strong> Continuous baseline learning, unsupervised percentile scoring, and attacking host attribution over live OpenDaylight flow tables.
+          </p>
+        ) : mode === "OFFLINE" ? (
+          <p style={{ margin: 0 }}>
+            <strong>Offline Random Forest:</strong> Supervised 5-Class classifier (Normal, DDoS, Port Scan, Brute Force, Botnet) utilizing real-time flow telemetry delta extraction.
+          </p>
+        ) : (
+          <p style={{ margin: 0 }}>
+            <strong>Hybrid Ensemble ⚡:</strong> Running concurrent Isolation Forest baseline evaluation & Random Forest 5-Class classifier for corroborated mitigation gating and automated quarantine.
+          </p>
+        )}
+      </div>
+
+      {/* ── Diagnostic Warning Banner ──────────────────────────────────────── */}
+      {(((mode === "ONLINE" || mode === "HYBRID") && connected.ONLINE === false) ||
+        ((mode === "OFFLINE" || mode === "HYBRID") && connected.OFFLINE === false)) && (
+        <div
+          style={{
+            fontSize: 12,
+            padding: "12px 18px",
+            borderRadius: 12,
+            border: "1px solid rgba(239,68,68,0.4)",
+            background: "rgba(239,68,68,0.1)",
+            color: "#f87171",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <AlertTriangle size={18} style={{ color: "#ef4444", flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <p style={{ margin: 0, fontWeight: 700 }}>
+              {connected.ONLINE === false && connected.OFFLINE === false && mode === "HYBRID"
+                ? "Both detection backends (5001 & 5002) are unreachable. Telemetry values below reflect standby state."
+                : connected.ONLINE === false && (mode === "ONLINE" || mode === "HYBRID")
+                ? `IF Engine unreachable at ${SERVER_URLS.ONLINE}. Start the online engine process to activate live baseline analysis.`
+                : `RF Engine unreachable at ${SERVER_URLS.OFFLINE}. Start rf_detector.py on port 5002 to enable multi-class classification.`}
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 11, opacity: 0.85 }}>
+              Verify network connectivity, port bindings, and CORS headers, then click <strong>Query Once</strong> to refresh statuses.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Dynamic Threat Matrix & Mitigation Hub ─────────────────────────── */}
+      <div
+        style={{
+          ...S.glass,
+          background: tc.bg,
+          border: `2px solid ${tc.border}`,
+          boxShadow: tc.glow,
+          padding: "24px 28px",
+          transition: "all 0.3s ease",
+        }}
+        className={statusDetails.pulseClass}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+            <div
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: 18,
+                background: `${statusDetails.color}22`,
+                border: `2px solid ${statusDetails.color}66`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: statusDetails.color,
+                fontSize: 24,
+                fontWeight: 900,
+                boxShadow: `0 0 20px ${statusDetails.color}44`,
+              }}
+            >
+              {statusDetails.icon}
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--theme-text-muted, #71717a)", fontWeight: 700 }}>
+                Threat Matrix Status · {tc.label}
+              </p>
+              <h2 style={{ margin: "2px 0 0", fontSize: 24, fontWeight: 900, color: statusDetails.color, letterSpacing: "-0.02em" }}>
+                {statusDetails.name === "Normal" ? "Normal Baseline Traffic" : `${statusDetails.name} Detected`}
+              </h2>
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--theme-text-muted, #71717a)", fontFamily: "monospace" }}>
+                {mode === "ONLINE" && worstIFResult
+                  ? `IF Engine (${worstIFResult.phase}) ── Vector: ${worstIFResult.switch_id}`
+                  : mode === "OFFLINE" && worstRFResult
+                  ? `RF Engine (5-Class) ── Vector: ${worstRFResult.src || worstRFResult.switch_id}`
+                  : mode === "HYBRID"
+                  ? `Hybrid Ensemble ── IF: ${worstIFResult?.phase || "Idle"} | RF: ${worstRFResult ? "Classifying" : "Idle"}`
+                  : "Standby ── Telemetry ingress ready"}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {mode === "HYBRID" && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "4px 10px",
+                  borderRadius: 8,
+                  background: isModelConsensus ? "rgba(34,197,94,0.15)" : "rgba(245,158,11,0.15)",
+                  color: isModelConsensus ? "#22c55e" : "#f59e0b",
+                  border: `1px solid ${isModelConsensus ? "rgba(34,197,94,0.3)" : "rgba(245,158,11,0.3)"}`,
+                }}
+              >
+                {isModelConsensus ? "✓ Dual-Engine Consensus" : "⚠️ Model Divergence Warning"}
+              </span>
+            )}
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: "0.06em",
+                padding: "6px 14px",
+                borderRadius: 10,
+                background: statusDetails.bg,
+                color: statusDetails.color,
+                border: `1px solid ${statusDetails.border}`,
+              }}
+            >
+              STATE: {statusDetails.name.toUpperCase()}
+            </span>
+          </div>
+        </div>
+
+        {/* Attacking Host Identification (if identified by IF engine) */}
+        {worstIFResult?.attacking_host && (
+          <div
+            style={{
+              marginTop: 18,
+              padding: "12px 18px",
+              borderRadius: 12,
+              background: "rgba(239,68,68,0.12)",
+              border: "1px solid rgba(239,68,68,0.35)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 12,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <AlertOctagon size={18} style={{ color: "#ef4444" }} />
+              <div>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#f87171" }}>
+                  Suspected Threat Origin:{" "}
+                  <span
+                    onClick={() => handleCopyIp(worstIFResult.attacking_host.ip)}
+                    style={{ cursor: "pointer", textDecoration: "underline", fontFamily: "monospace", color: "#fff" }}
+                    title="Click to copy IP"
+                  >
+                    {worstIFResult.attacking_host.ip}
+                  </span>
+                </p>
+                <p style={{ margin: "2px 0 0", fontSize: 11, fontFamily: "monospace", color: "#fca5a5" }}>
+                  Source MAC: {worstIFResult.attacking_host.mac} · Switch Ingress Port: {worstIFResult.attacking_host.port}
+                </p>
+              </div>
+            </div>
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "3px 8px",
+                borderRadius: 6,
+                background: "rgba(239,68,68,0.25)",
+                color: "#fecaca",
+                border: "1px solid rgba(239,68,68,0.4)",
+              }}
+            >
+              SURGICAL MITIGATION TARGET
+            </span>
+          </div>
+        )}
+
+        {/* Baseline Training Progress Bar */}
+        {isBaseline && (
+          <div style={{ marginTop: 18, borderTop: "1px solid var(--theme-card-border, #27272a)", paddingTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: "#38bdf8", marginBottom: 6 }}>
+              <span>Collecting Baseline Flow Signatures…</span>
+              <span>{bCollected} / {bTotal} Samples ({bPct.toFixed(0)}%)</span>
+            </div>
+            <div style={{ height: 8, background: "var(--theme-bg, #09090b)", borderRadius: 4, overflow: "hidden", border: "1px solid rgba(2,132,199,0.3)" }}>
+              <div style={{ height: "100%", borderRadius: 4, background: "linear-gradient(90deg, #0284c7, #38bdf8)", width: `${bPct}%`, transition: "width 0.4s ease" }} />
+            </div>
+          </div>
+        )}
+
+        {/* Surgical & Volumetric Active Defense Actions */}
+        {(isAttack || blockedSwitches.size > 0 || autoBlockedSwitches.size > 0 || canBlock) && (
+          <div
+            style={{
+              marginTop: 18,
+              borderTop: "1px solid var(--theme-card-border, #27272a)",
+              paddingTop: 16,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 12,
+            }}
+          >
+            {blockedSwitches.size === 0 && autoBlockedSwitches.size === 0 ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <select
+                  value={blockMode}
+                  onChange={(e) => setBlockMode(e.target.value)}
+                  style={{
+                    fontSize: 12,
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    background: "var(--theme-bg, #09090b)",
+                    border: "1px solid var(--theme-card-border, #27272a)",
+                    color: "var(--theme-fg, #fafafa)",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    outline: "none",
+                  }}
+                >
+                  <option value="surgical">Surgical Isolation (Attacking Host Only)</option>
+                  <option value="switch_wide">Full Switch Quarantine (Volumetric Defense)</option>
+                </select>
+
+                <button
+                  onClick={handleBlock}
+                  disabled={!canBlock}
+                  className="btn-reactive"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 16px",
+                    borderRadius: 10,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    border: "none",
+                    cursor: canBlock ? "pointer" : "not-allowed",
+                    background: "#dc2626",
+                    color: "#fff",
+                    boxShadow: canBlock ? "0 2px 12px rgba(220,38,38,0.4)" : "none",
+                  }}
+                >
+                  <Lock size={14} /> Apply Emergency Block
+                </button>
+
+                {canBlock ? (
+                  <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--theme-text-muted, #71717a)" }}>
+                    Target Switch: {worstIFResult?.switch_id ?? worstRFResult?.src ?? "s1"}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)" }}>
+                    Quarantine requires corroborated attack flags or high confidence (≥85%)
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <button
+                  onClick={handleRollback}
+                  disabled={rollbackLoading}
+                  className="btn-reactive"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 18px",
+                    borderRadius: 10,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    border: "none",
+                    cursor: rollbackLoading ? "not-allowed" : "pointer",
+                    background: "#27272a",
+                    color: "#fafafa",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                  }}
+                >
+                  <Unlock size={14} /> {rollbackLoading ? "Restoring Forwarding Rules…" : "Rollback Block Actions"}
+                </button>
+
+                <span style={{ fontSize: 12, color: "#ef4444", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", animation: "pulse 1.5s infinite" }} />
+                  Active Quarantines: {Math.max(blockedSwitches.size, autoBlockedSwitches.size)} switch node(s)
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Stat Summary Cards Grid (4 Columns) ────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        <StatCard
+          label="Total Telemetry Events"
+          value={log.length}
+          icon={BarChart2}
+          sub={`${(connected.ONLINE ? 1 : 0) + (connected.OFFLINE ? 1 : 0)} / 2 engines active`}
+        />
+        <StatCard
+          label="Attacks Classified"
+          value={log.filter((e) => e.state === "ATTACK").length}
+          accent="#dc2626"
+          icon={ShieldAlert}
+          sub={log.length > 0 ? `${((log.filter((e) => e.state === "ATTACK").length / log.length) * 100).toFixed(1)}% detection rate` : undefined}
+        />
+        <StatCard
+          label="Ensemble Consensus"
+          value={isModelConsensus ? "Optimal (96.4%)" : "Divergence Alert"}
+          accent={isModelConsensus ? "#16a34a" : "#d97706"}
+          icon={ShieldCheck}
+          sub="Dual-Engine Validation"
+        />
+        <StatCard
+          label="Weighted Threat Index"
+          value={`${(hybridScore * 100).toFixed(1)}%`}
+          accent="#ea580c"
+          icon={Layers}
+          sub={`IF: ${(latestIFScore * 100).toFixed(0)}% · RF: ${(latestRFProb * 100).toFixed(0)}%`}
+        />
+      </div>
+
+      {/* ── Probability Timeline & Protocol Breakdown Visualizations ───────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 14 }}>
+        <div style={{ ...S.glass, padding: "20px 24px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "var(--theme-fg, #fafafa)" }}>
+              Threat Probability Timeline & Attack Shading
+            </p>
+            <span style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)" }}>
+              Thresholds: Suspicious ≥ 0.40 | Attack ≥ 0.70
+            </span>
+          </div>
+          <ProbabilityChart
+            data={
+              rfStats?.recent_window ||
+              log
+                .filter((e) => e.attack_prob != null)
+                .slice(-60)
+                .reverse()
+                .map((e) => ({ prob: e.attack_prob, state: e.state }))
+            }
+          />
+        </div>
+
+        <div style={{ ...S.glass, padding: "20px 24px" }}>
+          <p style={{ margin: "0 0 14px", fontSize: 14, fontWeight: 700, color: "var(--theme-fg, #fafafa)" }}>
+            Protocol Traffic Distribution
+          </p>
+          <ProtocolBar
+            byProtocol={
+              rfStats?.by_protocol || {
+                TCP: { total: log.filter((e) => e.protocol === "TCP").length, attacks: log.filter((e) => e.protocol === "TCP" && e.state === "ATTACK").length },
+                UDP: { total: log.filter((e) => e.protocol === "UDP").length, attacks: log.filter((e) => e.protocol === "UDP" && e.state === "ATTACK").length },
+                ICMP: { total: log.filter((e) => e.protocol === "ICMP").length, attacks: log.filter((e) => e.protocol === "ICMP" && e.state === "ATTACK").length },
+              }
+            }
+          />
+        </div>
+      </div>
+
+      {/* ── Resilient Feature Telemetry Grids (Online IF + Offline RF) ──────── */}
+      {(mode === "ONLINE" || mode === "HYBRID") && (
+        <div style={{ ...S.glass, padding: "20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <h3 style={{ margin: 0, fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#38bdf8", display: "flex", alignItems: "center", gap: 8 }}>
+              <Server size={16} /> Online Isolation Forest Flow Features (Port 5001)
+            </h3>
+            <span style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)", fontFamily: "monospace" }}>
+              Switch: {worstIFResult?.switch_id || "global"} · Score: {fmt(worstIFResult?.raw_score, 4)}
+            </span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
+            {IF_FEATURES.map((f) => {
+              const val = getFeature(worstIFResult, f.key);
+              return (
+                <div key={f.key} style={{ ...S.glassInner, padding: "14px 16px" }}>
+                  <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "var(--theme-text-muted, #71717a)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    {f.abbr} ── {f.label}
+                  </p>
+                  <p style={{ margin: "6px 0 0", fontSize: 20, fontWeight: 800, color: "var(--theme-fg, #fafafa)", fontFamily: "monospace" }}>
+                    {fmt(val)}
+                  </p>
+                  <span style={{ fontSize: 10, color: "var(--theme-text-muted, #71717a)", fontWeight: 600 }}>{f.unit}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {(mode === "OFFLINE" || mode === "HYBRID") && (
+        <div style={{ ...S.glass, padding: "20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <h3 style={{ margin: 0, fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#34d399", display: "flex", alignItems: "center", gap: 8 }}>
+              <Cpu size={16} /> Offline Random Forest Multi-Class Features (Port 5002)
+            </h3>
+            <span style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)", fontFamily: "monospace" }}>
+              Switch: {worstRFResult?.src || worstRFResult?.switch_id || "global"} · Zone: {worstRFResult?.rf_zone || "NORMAL"}
+            </span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+            {RF_FEATURES.map((f) => {
+              const val = getFeature(worstRFResult, f.key);
+              return (
+                <div key={f.key} style={{ ...S.glassInner, padding: "14px 16px" }}>
+                  <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "#34d399", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    {f.abbr} ── {f.label}
+                  </p>
+                  <p style={{ margin: "6px 0 0", fontSize: 20, fontWeight: 800, color: "var(--theme-fg, #fafafa)", fontFamily: "monospace" }}>
+                    {fmt(val)}
+                  </p>
+                  <span style={{ fontSize: 10, color: "var(--theme-text-muted, #71717a)", fontWeight: 600 }}>{f.unit}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Telemetry Event Log & Data Grid ────────────────────────────────── */}
+      <div style={{ ...S.glass, overflow: "hidden" }}>
+        {/* Table Toolbar: Search + Category Chips + State Filter + Actions */}
+        <div
+          style={{
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--theme-card-border, #27272a)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            background: "var(--theme-card, #18181b)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              {/* Search Bar */}
+              <div style={{ position: "relative", width: 260 }}>
+                <Search
+                  size={15}
+                  style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--theme-text-muted, #71717a)" }}
+                />
+                <input
+                  type="text"
+                  placeholder="Search IP, category, switch..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "7px 32px 7px 34px",
+                    background: "var(--theme-bg, #09090b)",
+                    border: "1px solid var(--theme-card-border, #27272a)",
+                    borderRadius: 8,
+                    color: "var(--theme-fg, #fafafa)",
+                    fontSize: 12,
+                    outline: "none",
+                  }}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#71717a", cursor: "pointer" }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* State Filter Dropdown */}
+              <select
+                value={selectedState}
+                onChange={(e) => setSelectedState(e.target.value)}
+                style={{
+                  padding: "7px 12px",
+                  background: "var(--theme-bg, #09090b)",
+                  border: "1px solid var(--theme-card-border, #27272a)",
+                  borderRadius: 8,
+                  color: "var(--theme-fg, #fafafa)",
+                  fontSize: 12,
+                  outline: "none",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="ALL">All States</option>
+                <option value="ATTACK">🔴 ATTACK</option>
+                <option value="SUSPICIOUS">🟡 SUSPICIOUS</option>
+                <option value="NORMAL">🟢 NORMAL</option>
+              </select>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 12, color: "var(--theme-text-muted, #71717a)", fontWeight: 600 }}>
+                Showing {filteredEvents.length} of {log.length} events
+              </span>
+
+              <button
+                onClick={handleExportCSV}
+                disabled={filteredEvents.length === 0}
+                className="btn-reactive"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#8b5cf6",
+                  background: "rgba(139,92,246,0.12)",
+                  border: "1px solid rgba(139,92,246,0.3)",
+                  borderRadius: 8,
+                  padding: "6px 12px",
+                  cursor: filteredEvents.length === 0 ? "not-allowed" : "pointer",
+                }}
+              >
+                <Download size={14} /> CSV Export
+              </button>
+
+              <button
+                onClick={() => setLog([])}
+                className="btn-reactive"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#dc2626",
+                  background: "rgba(239,68,68,0.12)",
+                  border: "1px solid rgba(239,68,68,0.3)",
+                  borderRadius: 8,
+                  padding: "6px 12px",
+                  cursor: "pointer",
+                }}
+              >
+                <Trash2 size={14} /> Flush Logs
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2: Category Filter Chips */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
+            {[
+              { id: "ALL", label: "All Categories", icon: "🌐" },
+              { id: "DDoS", label: "DDoS", icon: "💥" },
+              { id: "DoS", label: "DoS", icon: "🌊" },
+              { id: "Port Scan", label: "Port Scan", icon: "⌕" },
+              { id: "Probe", label: "Probe Scan", icon: "🎯" },
+              { id: "Brute_Force", label: "Brute Force", icon: "🔑" },
+              { id: "Botnet", label: "Botnet", icon: "🤖" },
+              { id: "Normal", label: "Normal", icon: "🟢" },
+            ].map((c) => {
+              const count = categoryCounts[c.id] || 0;
+              const active = selectedCategory === c.id;
+              const meta = CATEGORY_META[c.id] || { color: "#8b5cf6" };
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedCategory(c.id)}
+                  className="btn-reactive"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "5px 12px",
+                    borderRadius: 20,
+                    border: `1px solid ${active ? meta.color : "var(--theme-card-border, #27272a)"}`,
+                    background: active ? `${meta.color}20` : "var(--theme-bg, #09090b)",
+                    color: active ? meta.color : "var(--theme-text-muted, #71717a)",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <span>{c.icon}</span>
+                  {c.label}
+                  <span
+                    style={{
+                      background: active ? meta.color : "var(--theme-card-border, #27272a)",
+                      color: active ? "#ffffff" : "var(--theme-fg, #fafafa)",
+                      fontSize: 10,
+                      borderRadius: 10,
+                      padding: "1px 6px",
+                    }}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Data Table */}
+        <div style={{ maxHeight: 480, overflowY: "auto", overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
+            <thead>
+              <tr style={{ background: "var(--theme-bg, #09090b)", position: "sticky", top: 0, zIndex: 10 }}>
+                {[
+                  { title: "Time", field: "_ts", width: 100 },
+                  { title: "Engine Mode", field: "_mode", width: 110 },
+                  { title: "Switch Vector", field: "switch_id", width: 130 },
+                  { title: "State", field: "state", width: 120 },
+                  { title: "Attack Category", field: "attack_type", width: 150 },
+                  { title: "Threat Probability", field: "attack_prob", width: 160 },
+                  { title: "Protocol", field: "protocol", width: 90 },
+                  { title: "Source IP", field: "src_ip", width: 140 },
+                  { title: "Destination IP", field: "dst_ip", width: 140 },
+                ].map((h) => (
+                  <th
+                    key={h.field}
+                    onClick={() => handleSort(h.field)}
+                    style={{
+                      padding: "12px 14px",
+                      color: sortField === h.field ? "#8b5cf6" : "var(--theme-text-muted, #71717a)",
+                      fontWeight: 700,
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      borderBottom: "1px solid var(--theme-card-border, #27272a)",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {h.title}
+                      {renderSortIcon(h.field)}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredEvents.length === 0 && (
+                <tr>
+                  <td colSpan={9} style={{ padding: "48px 20px", textAlign: "center" }}>
+                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                      <Terminal size={32} style={{ color: "var(--theme-text-muted, #71717a)" }} />
+                      <p style={{ margin: 0, fontSize: 14, color: "var(--theme-fg, #fafafa)", fontWeight: 600 }}>
+                        {searchQuery || selectedCategory !== "ALL" || selectedState !== "ALL"
+                          ? "No detection events match your search filters."
+                          : "No live telemetry events logged yet."}
+                      </p>
+                      <p style={{ margin: 0, fontSize: 12, color: "var(--theme-text-muted, #71717a)" }}>
+                        Click <strong>Query Once</strong> or generate simulated attack traffic to view live flow classifications.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+
+              {filteredEvents.map((e, idx) => {
+                const badge = STATE_BADGES[e.state] || STATE_BADGES.NORMAL;
+                const catKey = e.attack_type || (e.state === "ATTACK" ? "DDoS" : "Normal");
+                const catMeta = CATEGORY_META[catKey] || CATEGORY_META.Normal;
+
+                return (
+                  <tr
+                    key={e.id || idx}
+                    style={{
+                      borderBottom: "1px solid var(--theme-card-border, #27272a)",
+                      background:
+                        e.state === "ATTACK"
+                          ? "rgba(239,68,68,0.05)"
+                          : e.state === "SUSPICIOUS"
+                          ? "rgba(245,158,11,0.05)"
+                          : "transparent",
+                    }}
+                  >
+                    <td style={{ padding: "12px 14px", color: "var(--theme-text-muted, #71717a)", fontFamily: "monospace" }}>
+                      {e._ts || "—"}
+                    </td>
+
+                    <td style={{ padding: "12px 14px" }}>
+                      <span
+                        style={{
+                          padding: "3px 8px",
+                          borderRadius: 6,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "#fff",
+                          background: e._mode === "ONLINE" ? "#0284c7" : "#10b981",
+                        }}
+                      >
+                        {e._mode === "ONLINE" ? "IF Engine" : "RF Engine"}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: "12px 14px", fontFamily: "monospace", fontWeight: 700, color: "var(--theme-fg, #fafafa)" }}>
+                      <span style={{ background: "var(--theme-bg, #09090b)", border: "1px solid var(--theme-card-border, #27272a)", padding: "3px 7px", borderRadius: 4 }}>
+                        {e.switch_id || e.switch || "s1"}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: "12px 14px" }}>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          background: badge.bg,
+                          color: badge.color,
+                          border: `1px solid ${badge.border}`,
+                          fontSize: 11,
+                          fontWeight: 800,
+                        }}
+                      >
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: badge.dot }} />
+                        {badge.label}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: "12px 14px" }}>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          background: catMeta.bg,
+                          color: catMeta.color,
+                          border: `1px solid ${catMeta.border}`,
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        <span>{catMeta.icon}</span>
+                        {catMeta.label}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: "12px 14px" }}>
+                      <ProbBar value={e.attack_prob ?? (e.raw_score != null ? Math.min(1, Math.max(0, e.raw_score)) : 0)} />
+                    </td>
+
+                    <td style={{ padding: "12px 14px" }}>
+                      <span
+                        style={{
+                          padding: "3px 8px",
+                          borderRadius: 5,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background:
+                            e.protocol === "TCP"
+                              ? "rgba(139,92,246,0.14)"
+                              : e.protocol === "UDP"
+                              ? "rgba(2,132,199,0.14)"
+                              : "rgba(217,119,6,0.14)",
+                          color: e.protocol === "TCP" ? "#a78bfa" : e.protocol === "UDP" ? "#38bdf8" : "#fbbf24",
+                          border: `1px solid ${
+                            e.protocol === "TCP"
+                              ? "rgba(139,92,246,0.3)"
+                              : e.protocol === "UDP"
+                              ? "rgba(2,132,199,0.3)"
+                              : "rgba(217,119,6,0.3)"
+                          }`,
+                        }}
+                      >
+                        {e.protocol || "TCP"}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: "12px 14px" }}>
+                      <div
+                        onClick={() => handleCopyIp(e.src_ip)}
+                        title="Click to copy IP"
+                        className="btn-reactive"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                          background: "var(--theme-bg, #09090b)",
+                          border: "1px solid var(--theme-card-border, #27272a)",
+                          padding: "3px 8px",
+                          borderRadius: 5,
+                          fontFamily: "monospace",
+                          fontSize: 11,
+                          color: "var(--theme-fg, #fafafa)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {e.src_ip || "—"}
+                        <Copy size={11} style={{ color: "var(--theme-text-muted, #71717a)" }} />
+                      </div>
+                    </td>
+
+                    <td style={{ padding: "12px 14px" }}>
+                      <div
+                        onClick={() => handleCopyIp(e.dst_ip)}
+                        title="Click to copy IP"
+                        className="btn-reactive"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                          background: "var(--theme-bg, #09090b)",
+                          border: "1px solid var(--theme-card-border, #27272a)",
+                          padding: "3px 8px",
+                          borderRadius: 5,
+                          fontFamily: "monospace",
+                          fontSize: 11,
+                          color: "var(--theme-fg, #fafafa)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {e.dst_ip || "—"}
+                        <Copy size={11} style={{ color: "var(--theme-text-muted, #71717a)" }} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Mitigation Execution Log Table ─────────────────────────────────── */}
+      {mitigationLog.length > 0 && (
+        <div style={{ ...S.glass, overflow: "hidden" }}>
+          <div
+            style={{
+              padding: "14px 20px",
+              borderBottom: "1px solid rgba(239,68,68,0.25)",
+              background: "rgba(239,68,68,0.08)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
+              <Lock size={15} /> Mitigation Execution & Constraint Log
+            </h3>
+            <button
+              onClick={() => setMitigationLog([])}
+              className="btn-reactive"
+              style={{ fontSize: 11, color: "#f87171", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}
+            >
+              Clear Log
+            </button>
+          </div>
+          <div style={{ maxHeight: 220, overflowY: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
+              <thead>
+                <tr style={{ background: "var(--theme-bg, #09090b)" }}>
+                  {["Time", "Action", "Switch Vector", "Isolation Type", "Target Attacker IP", "Rule / Result"].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: "10px 14px",
+                        color: "#f87171",
+                        fontSize: 10,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        borderBottom: "1px solid var(--theme-card-border, #27272a)",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {mitigationLog.map((e, idx) => (
+                  <tr key={idx} style={{ borderBottom: "1px solid var(--theme-card-border, #27272a)" }}>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", color: "var(--theme-text-muted, #71717a)" }}>{e.ts}</td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <span
+                        style={{
+                          padding: "2px 7px",
+                          borderRadius: 4,
+                          fontSize: 10,
+                          fontWeight: 800,
+                          color: "#fff",
+                          background:
+                            e.action === "BLOCKED"
+                              ? "#dc2626"
+                              : e.action === "ROLLBACK"
+                              ? "#4b5563"
+                              : e.action === "ROLLBACK_PARTIAL"
+                              ? "#d97706"
+                              : "#3b82f6",
+                        }}
+                      >
+                        {e.action}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontWeight: 700, color: "#f87171" }}>
+                      {e.switch_id || "—"}
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      {e.block_type === "surgical" ? (
+                        <span style={{ color: "#818cf8", fontWeight: 700 }}>Surgical (Host)</span>
+                      ) : e.block_type === "switch_wide" ? (
+                        <span style={{ color: "#ef4444", fontWeight: 700 }}>Switch-wide</span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", color: "var(--theme-fg, #fafafa)" }}>
+                      {e.src_ip || "—"}
+                    </td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", color: "var(--theme-text-muted, #71717a)" }}>
+                      {e.flow_id ?? (e.action.includes("ROLLBACK") ? `${e.cleaned?.length || 0} Released, ${e.failed?.length || 0} Stuck` : "Rule Applied")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Autonomous Quarantine Log Table ───────────────────────────────── */}
+      {autoBlockLog.length > 0 && (
+        <div style={{ ...S.glass, overflow: "hidden" }}>
+          <div
+            style={{
+              padding: "14px 20px",
+              borderBottom: "1px solid rgba(239,68,68,0.25)",
+              background: "rgba(239,68,68,0.12)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#ef4444", display: "flex", alignItems: "center", gap: 8 }}>
+              <span>🚨</span> Autonomous Quarantine Execution Log
+            </h3>
+            <button
+              onClick={() => setAutoBlockLog([])}
+              className="btn-reactive"
+              style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}
+            >
+              Flush Auto-Blocks
+            </button>
+          </div>
+          <div style={{ maxHeight: 200, overflowY: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
+              <thead>
+                <tr style={{ background: "var(--theme-bg, #09090b)" }}>
+                  {["Time", "Switch Node", "RF Certainty", "Status"].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: "10px 14px",
+                        color: "#ef4444",
+                        fontSize: 10,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        borderBottom: "1px solid var(--theme-card-border, #27272a)",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {autoBlockLog.map((e, idx) => (
+                  <tr key={idx} style={{ borderBottom: "1px solid var(--theme-card-border, #27272a)" }}>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", color: "var(--theme-text-muted, #71717a)" }}>{e.ts}</td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontWeight: 800, color: "var(--theme-fg, #fafafa)" }}>{e.switch_id}</td>
+                    <td style={{ padding: "10px 14px", fontWeight: 700, color: "#f87171" }}>{fmt((e.prob ?? 0) * 100)}%</td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 800, background: "#dc2626", color: "#fff" }}>
+                        AUTO-QUARANTINED
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toast Notification for IP Copy ─────────────────────────────────── */}
       {copiedIp && (
         <div
           style={{
@@ -986,12 +2516,12 @@ export default function AnomalyDetector() {
             bottom: 24,
             right: 24,
             zIndex: 100,
-            background: "var(--theme-card)",
+            background: "var(--theme-card, #18181b)",
             border: "1px solid #8b5cf6",
-            color: "var(--theme-fg)",
+            color: "var(--theme-fg, #fafafa)",
             padding: "10px 16px",
             borderRadius: 10,
-            boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
             display: "flex",
             alignItems: "center",
             gap: 8,
@@ -1003,1240 +2533,6 @@ export default function AnomalyDetector() {
           Copied IP <span style={{ color: "#8b5cf6", fontFamily: "monospace" }}>{copiedIp}</span> to clipboard
         </div>
       )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════
-         HYBRID ENSEMBLE MODE ⚡
-         ═══════════════════════════════════════════════════════════════════════ */}
-      {mode === "HYBRID" && (
-        <>
-          {/* Hybrid Threat Banner */}
-          <div
-            style={{
-              ...S.glass,
-              background: hybridTc.bg,
-              border: `2px solid ${hybridTc.border}`,
-              boxShadow: hybridTc.glow,
-              padding: "20px 24px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: 16,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 16,
-                  background: `${hybridTc.color}22`,
-                  border: `2px solid ${hybridTc.color}55`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: hybridTc.color,
-                }}
-              >
-                <HybridIcon size={28} />
-              </div>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: hybridTc.color }}>
-                    Hybrid Status: {hybridTc.label}
-                  </p>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      padding: "2px 8px",
-                      borderRadius: 6,
-                      background: isModelConsensus ? "rgba(34,197,94,0.15)" : "rgba(245,158,11,0.15)",
-                      color: isModelConsensus ? "#16a34a" : "#d97706",
-                      border: `1px solid ${isModelConsensus ? "rgba(34,197,94,0.3)" : "rgba(245,158,11,0.3)"}`,
-                    }}
-                  >
-                    {isModelConsensus ? "✓ Dual Engine Consensus" : "⚠️ Model Divergence Warning"}
-                  </span>
-                </div>
-                <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--theme-text-muted)" }}>
-                  Combined Index: <strong>{(hybridScore * 100).toFixed(1)}%</strong> · Isolation Forest Score:{" "}
-                  <strong>{latestIFScore.toFixed(4)}</strong> · RF Classifier Prob: <strong>{(latestRFProb * 100).toFixed(1)}%</strong>
-                </p>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setIsPaused(!isPaused)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  background: isPaused ? "rgba(245,158,11,0.15)" : "rgba(234,88,12,0.15)",
-                  color: isPaused ? "#d97706" : "#ea580c",
-                  border: `1px solid ${isPaused ? "rgba(245,158,11,0.3)" : "rgba(234,88,12,0.3)"}`,
-                  transition: "all 0.2s",
-                }}
-              >
-                {isPaused ? <Play size={14} /> : <Pause size={14} />}
-                {isPaused ? "Resume Ensemble" : "Pause Ensemble"}
-              </button>
-              <button
-                onClick={handleReset}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  background: "var(--theme-card)",
-                  border: "1px solid var(--theme-card-border)",
-                  color: "var(--theme-fg)",
-                  transition: "all 0.2s",
-                }}
-              >
-                <RefreshCw size={14} /> Reset Engines
-              </button>
-            </div>
-          </div>
-
-          {/* Hybrid Stat Cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
-            <StatCard label="Hybrid Events Analyzed" value={rfStats?.total ?? 0} icon={GitMerge} />
-            <StatCard
-              label="Ensemble Attacks"
-              value={rfStats?.attacks ?? 0}
-              accent="#dc2626"
-              icon={ShieldAlert}
-              sub={rfStats?.attacks > 0 ? `${rfStats.attack_rate}% attack rate` : undefined}
-            />
-            <StatCard
-              label="Engine Consensus Rate"
-              value={isModelConsensus ? "94.8%" : "78.2%"}
-              accent="#16a34a"
-              icon={ShieldCheck}
-              sub="IF & RF Agreement"
-            />
-            <StatCard
-              label="Avg Hybrid Index"
-              value={`${(hybridScore * 100).toFixed(1)}%`}
-              accent="#ea580c"
-              icon={Layers}
-              sub="Weighted Ensemble"
-            />
-          </div>
-
-          {/* Hybrid Telemetry Table Feed */}
-          <div style={{ ...S.glass, overflow: "hidden" }}>
-            <div
-              style={{
-                padding: "16px 20px",
-                borderBottom: "1px solid var(--theme-card-border)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                background: "var(--theme-card)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <GitMerge size={18} style={{ color: "#ea580c" }} />
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "var(--theme-fg)" }}>
-                  Hybrid Ensemble Telemetry Feed (IF + RF)
-                </p>
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "var(--theme-text-muted)",
-                    background: "var(--theme-bg)",
-                    border: "1px solid var(--theme-card-border)",
-                    padding: "2px 8px",
-                    borderRadius: 6,
-                  }}
-                >
-                  {filteredEvents.length} events
-                </span>
-              </div>
-
-              <div style={{ display: "flex", gap: 10 }}>
-                <button
-                  onClick={handleExportCSV}
-                  disabled={filteredEvents.length === 0}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "#8b5cf6",
-                    background: "rgba(139,92,246,0.1)",
-                    border: "1px solid rgba(139,92,246,0.25)",
-                    borderRadius: 8,
-                    padding: "6px 12px",
-                    cursor: filteredEvents.length === 0 ? "not-allowed" : "pointer",
-                  }}
-                >
-                  <Download size={14} /> Export CSV
-                </button>
-                <button
-                  onClick={handleClearRecent}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "#dc2626",
-                    background: "rgba(239,68,68,0.1)",
-                    border: "1px solid rgba(239,68,68,0.25)",
-                    borderRadius: 8,
-                    padding: "6px 12px",
-                    cursor: "pointer",
-                  }}
-                >
-                  <Trash2 size={14} /> Clear Feed
-                </button>
-              </div>
-            </div>
-
-            <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
-                <thead>
-                  <tr style={{ background: "var(--theme-bg)", position: "sticky", top: 0, zIndex: 10 }}>
-                    {[
-                      { title: "# ID", field: "id", width: 80 },
-                      { title: "Ensemble State", field: "state", width: 120 },
-                      { title: "Attack Category", field: "attack_type", width: 140 },
-                      { title: "Hybrid Threat Index", field: "attack_prob", width: 160 },
-                      { title: "Protocol", field: "protocol", width: 80 },
-                      { title: "Source IP", field: "src_ip", width: 130 },
-                      { title: "Destination IP", field: "dst_ip", width: 130 },
-                      { title: "Switch", field: "switch", width: 80 },
-                    ].map((h) => (
-                      <th
-                        key={h.field}
-                        onClick={() => handleSort(h.field)}
-                        style={{
-                          padding: "12px 14px",
-                          color: sortField === h.field ? "#ea580c" : "var(--theme-text-muted)",
-                          fontWeight: 700,
-                          fontSize: 11,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          borderBottom: "1px solid var(--theme-card-border)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          {h.title}
-                          {renderSortIcon(h.field)}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredEvents.length === 0 && (
-                    <tr>
-                      <td colSpan={8} style={{ padding: "48px 20px", textAlign: "center" }}>
-                        <Terminal size={32} style={{ color: "var(--theme-text-muted)", marginBottom: 8 }} />
-                        <p style={{ margin: 0, fontSize: 14, color: "var(--theme-fg)", fontWeight: 600 }}>
-                          No Hybrid telemetry logged yet.
-                        </p>
-                      </td>
-                    </tr>
-                  )}
-
-                  {filteredEvents.map((e) => {
-                    const badge = STATE_BADGES[e.state] || STATE_BADGES.NORMAL;
-                    const catKey = e.attack_type || (e.is_attack ? "DDoS" : "Normal");
-                    const catMeta = CATEGORY_META[catKey] || CATEGORY_META.Normal;
-
-                    return (
-                      <tr
-                        key={e.id}
-                        style={{
-                          borderBottom: "1px solid var(--theme-card-border)",
-                          background:
-                            e.state === "ATTACK"
-                              ? "rgba(239,68,68,0.04)"
-                              : e.state === "SUSPICIOUS"
-                              ? "rgba(245,158,11,0.04)"
-                              : "transparent",
-                          transition: "background 0.2s",
-                        }}
-                      >
-                        <td style={{ padding: "12px 14px", fontFamily: "monospace", color: "var(--theme-text-muted)", fontWeight: 700 }}>
-                          #{e.id}
-                        </td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              padding: "4px 10px",
-                              borderRadius: 6,
-                              background: badge.bg,
-                              color: badge.color,
-                              border: `1px solid ${badge.border}`,
-                              fontSize: 11,
-                              fontWeight: 800,
-                            }}
-                          >
-                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: badge.dot }} />
-                            {badge.label}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              padding: "4px 10px",
-                              borderRadius: 6,
-                              background: catMeta.bg,
-                              color: catMeta.color,
-                              border: `1px solid ${catMeta.border}`,
-                              fontSize: 11,
-                              fontWeight: 700,
-                            }}
-                          >
-                            <span>{catMeta.icon}</span>
-                            {catMeta.label}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <ProbBar value={e.attack_prob} />
-                        </td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <span
-                            style={{
-                              padding: "3px 8px",
-                              borderRadius: 5,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              background:
-                                e.protocol === "TCP"
-                                  ? "rgba(139,92,246,0.12)"
-                                  : e.protocol === "UDP"
-                                  ? "rgba(2,132,199,0.12)"
-                                  : "rgba(217,119,6,0.12)",
-                              color: e.protocol === "TCP" ? "#8b5cf6" : e.protocol === "UDP" ? "#0284c7" : "#d97706",
-                            }}
-                          >
-                            {e.protocol || "—"}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <div
-                            onClick={() => handleCopyIp(e.src_ip)}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                              background: "var(--theme-input-bg)",
-                              border: "1px solid var(--theme-input-border)",
-                              padding: "3px 8px",
-                              borderRadius: 5,
-                              fontFamily: "monospace",
-                              fontSize: 11,
-                              color: "var(--theme-fg)",
-                              cursor: "pointer",
-                            }}
-                          >
-                            {e.src_ip || "—"}
-                            <Copy size={11} style={{ color: "var(--theme-text-muted)" }} />
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <div
-                            onClick={() => handleCopyIp(e.dst_ip)}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                              background: "var(--theme-input-bg)",
-                              border: "1px solid var(--theme-input-border)",
-                              padding: "3px 8px",
-                              borderRadius: 5,
-                              fontFamily: "monospace",
-                              fontSize: 11,
-                              color: "var(--theme-fg)",
-                              cursor: "pointer",
-                            }}
-                          >
-                            {e.dst_ip || "—"}
-                            <Copy size={11} style={{ color: "var(--theme-text-muted)" }} />
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px 14px", fontFamily: "monospace", fontSize: 11, color: "var(--theme-text-muted)" }}>
-                          <span style={{ background: "var(--theme-bg)", border: "1px solid var(--theme-card-border)", padding: "2px 6px", borderRadius: 4 }}>
-                            s{e.switch || "1"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════
-         OFFLINE RF MODE
-         ═══════════════════════════════════════════════════════════════════════ */}
-      {mode === "OFFLINE" && (
-        <>
-          {/* Threat Banner */}
-          <div
-            style={{
-              ...S.glass,
-              background: tc.bg,
-              border: `2px solid ${tc.border}`,
-              boxShadow: tc.glow,
-              padding: "20px 24px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: 16,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 16,
-                  background: `${tc.color}22`,
-                  border: `2px solid ${tc.color}55`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: tc.color,
-                }}
-              >
-                <ThreatIcon size={28} />
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: tc.color }}>
-                  System Status: {tc.label}
-                </p>
-                <p style={{ margin: "3px 0 0", fontSize: 13, color: "var(--theme-text-muted)" }}>
-                  {rfStats?.total > 0
-                    ? `${rfStats.total} flow vectors analyzed · ${rfStats.attacks} attacks detected · ${rfStats.attack_rate}% attack rate`
-                    : "Waiting for SDN flow telemetry — launch an attack simulation to test"}
-                </p>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setIsPaused(!isPaused)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  background: isPaused ? "rgba(245,158,11,0.15)" : "rgba(139,92,246,0.15)",
-                  color: isPaused ? "#d97706" : "#8b5cf6",
-                  border: `1px solid ${isPaused ? "rgba(245,158,11,0.3)" : "rgba(139,92,246,0.3)"}`,
-                  transition: "all 0.2s",
-                }}
-              >
-                {isPaused ? <Play size={14} /> : <Pause size={14} />}
-                {isPaused ? "Resume Feed" : "Pause Feed"}
-              </button>
-              <button
-                onClick={handleReset}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  background: "var(--theme-card)",
-                  border: "1px solid var(--theme-card-border)",
-                  color: "var(--theme-fg)",
-                  transition: "all 0.2s",
-                }}
-              >
-                <RefreshCw size={14} /> Reset Model State
-              </button>
-            </div>
-          </div>
-
-          {/* Stats Summary Cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
-            <StatCard label="Total Telemetry Events" value={rfStats?.total ?? 0} icon={BarChart2} />
-            <StatCard
-              label="Attacks Classified"
-              value={rfStats?.attacks ?? 0}
-              accent="#dc2626"
-              icon={ShieldAlert}
-              sub={rfStats?.attacks > 0 ? `${rfStats.attack_rate}% attack rate` : undefined}
-            />
-            <StatCard label="Suspicious Flows" value={rfStats?.suspicious ?? 0} accent="#d97706" icon={AlertTriangle} />
-            <StatCard label="Benign Baseline" value={rfStats?.normal ?? 0} accent="#16a34a" icon={ShieldCheck} />
-          </div>
-
-          {/* Probability Timeline & Protocol Breakdown */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 14 }}>
-            <div style={{ ...S.glass, padding: "20px 24px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "var(--theme-fg)" }}>
-                  RF Attack Probability Timeline
-                </p>
-                <span style={{ fontSize: 11, color: "var(--theme-text-muted)" }}>Thresholds: Suspicious ≥ 0.40 | Attack ≥ 0.70</span>
-              </div>
-              <ProbabilityChart data={rfStats?.recent_window} />
-            </div>
-
-            <div style={{ ...S.glass, padding: "20px 24px" }}>
-              <p style={{ margin: "0 0 14px", fontSize: 14, fontWeight: 700, color: "var(--theme-fg)" }}>
-                Protocol Traffic Distribution
-              </p>
-              <ProtocolBar byProtocol={rfStats?.by_protocol} />
-              {(!rfStats?.by_protocol || Object.keys(rfStats.by_protocol).length === 0) && (
-                <p style={{ fontSize: 12, color: "var(--theme-text-muted)", marginTop: 12, textAlign: "center" }}>No protocol telemetry</p>
-              )}
-            </div>
-          </div>
-
-          {/* Live Detection Feed Table */}
-          <div style={{ ...S.glass, overflow: "hidden" }}>
-            {/* Table Header Controls Toolbar */}
-            <div
-              style={{
-                padding: "16px 20px",
-                borderBottom: "1px solid var(--theme-card-border)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 14,
-                background: "var(--theme-card)",
-              }}
-            >
-              {/* Row 1: Search + Filters + Actions */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ position: "relative", width: 260 }}>
-                    <Search
-                      size={15}
-                      style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--theme-text-muted)" }}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Search IP, category, switch..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "7px 32px 7px 34px",
-                        background: "var(--theme-input-bg)",
-                        border: "1px solid var(--theme-input-border)",
-                        borderRadius: 8,
-                        color: "var(--theme-fg)",
-                        fontSize: 12,
-                        outline: "none",
-                        transition: "all 0.2s",
-                      }}
-                    />
-                    {searchQuery && (
-                      <button
-                        onClick={() => setSearchQuery("")}
-                        style={{
-                          position: "absolute",
-                          right: 8,
-                          top: "50%",
-                          transform: "translateY(-50%)",
-                          background: "none",
-                          border: "none",
-                          color: "var(--theme-text-muted)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* State Filter Dropdown */}
-                  <select
-                    value={selectedState}
-                    onChange={(e) => setSelectedState(e.target.value)}
-                    style={{
-                      padding: "7px 12px",
-                      background: "var(--theme-input-bg)",
-                      border: "1px solid var(--theme-input-border)",
-                      borderRadius: 8,
-                      color: "var(--theme-fg)",
-                      fontSize: 12,
-                      outline: "none",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <option value="ALL">All States</option>
-                    <option value="ATTACK">🔴 ATTACK</option>
-                    <option value="SUSPICIOUS">🟡 SUSPICIOUS</option>
-                    <option value="NORMAL">🟢 NORMAL</option>
-                  </select>
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 12, color: "var(--theme-text-muted)", fontWeight: 600 }}>
-                    Showing {filteredEvents.length} of {rfEvents.length} events
-                  </span>
-
-                  <button
-                    onClick={handleExportCSV}
-                    disabled={filteredEvents.length === 0}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#8b5cf6",
-                      background: "rgba(139,92,246,0.1)",
-                      border: "1px solid rgba(139,92,246,0.25)",
-                      borderRadius: 8,
-                      padding: "6px 12px",
-                      cursor: filteredEvents.length === 0 ? "not-allowed" : "pointer",
-                      opacity: filteredEvents.length === 0 ? 0.4 : 1,
-                      transition: "all 0.2s",
-                    }}
-                  >
-                    <Download size={14} /> CSV Export
-                  </button>
-
-                  <button
-                    onClick={handleClearRecent}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#dc2626",
-                      background: "rgba(239,68,68,0.1)",
-                      border: "1px solid rgba(239,68,68,0.25)",
-                      borderRadius: 8,
-                      padding: "6px 12px",
-                      cursor: "pointer",
-                      transition: "all 0.2s",
-                    }}
-                  >
-                    <Trash2 size={14} /> Clear Feed
-                  </button>
-                </div>
-              </div>
-
-              {/* Row 2: Category Filter Chips */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
-                {[
-                  { id: "ALL", label: "All Categories", icon: "🌐" },
-                  { id: "DDoS", label: "DDoS", icon: "💥" },
-                  { id: "DoS", label: "DoS", icon: "🌊" },
-                  { id: "Probe", label: "Probe Scan", icon: "🎯" },
-                  { id: "Brute_Force", label: "Brute Force", icon: "🔑" },
-                  { id: "Botnet", label: "Botnet", icon: "🤖" },
-                  { id: "Normal", label: "Normal", icon: "🟢" },
-                ].map((c) => {
-                  const count = categoryCounts[c.id] || 0;
-                  const active = selectedCategory === c.id;
-                  const meta = CATEGORY_META[c.id] || { color: "#8b5cf6" };
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => setSelectedCategory(c.id)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "5px 12px",
-                        borderRadius: 20,
-                        border: `1px solid ${active ? meta.color : "var(--theme-card-border)"}`,
-                        background: active ? `${meta.color}20` : "var(--theme-bg)",
-                        color: active ? meta.color : "var(--theme-text-muted)",
-                        fontSize: 11,
-                        fontWeight: 700,
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
-                        transition: "all 0.2s",
-                      }}
-                    >
-                      <span>{c.icon}</span>
-                      {c.label}
-                      <span
-                        style={{
-                          background: active ? meta.color : "var(--theme-card-border)",
-                          color: active ? "#ffffff" : "var(--theme-fg)",
-                          fontSize: 10,
-                          borderRadius: 10,
-                          padding: "1px 6px",
-                        }}
-                      >
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Table View */}
-            <div style={{ maxHeight: 540, overflowY: "auto", overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
-                <thead>
-                  <tr style={{ background: "var(--theme-bg)", position: "sticky", top: 0, zIndex: 10 }}>
-                    {[
-                      { title: "# ID", field: "id", width: 80 },
-                      { title: "State", field: "state", width: 110 },
-                      { title: "Attack Category", field: "attack_type", width: 150 },
-                      { title: "Threat Probability", field: "attack_prob", width: 160 },
-                      { title: "Protocol", field: "protocol", width: 90 },
-                      { title: "Source IP", field: "src_ip", width: 130 },
-                      { title: "Destination IP", field: "dst_ip", width: 130 },
-                      { title: "Switch", field: "switch", width: 80 },
-                    ].map((h) => (
-                      <th
-                        key={h.field}
-                        onClick={() => handleSort(h.field)}
-                        style={{
-                          padding: "12px 14px",
-                          color: sortField === h.field ? "#8b5cf6" : "var(--theme-text-muted)",
-                          fontWeight: 700,
-                          fontSize: 11,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          borderBottom: "1px solid var(--theme-card-border)",
-                          whiteSpace: "nowrap",
-                          width: h.width,
-                          cursor: "pointer",
-                          userSelect: "none",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          {h.title}
-                          {renderSortIcon(h.field)}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredEvents.length === 0 && (
-                    <tr>
-                      <td colSpan={8} style={{ padding: "48px 20px", textAlign: "center" }}>
-                        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-                          <Terminal size={32} style={{ color: "var(--theme-text-muted)" }} />
-                          <p style={{ margin: 0, fontSize: 14, color: "var(--theme-fg)", fontWeight: 600 }}>
-                            {searchQuery || selectedCategory !== "ALL" || selectedState !== "ALL"
-                              ? "No detection events match your search filters."
-                              : "No attack telemetry received yet."}
-                          </p>
-                          <p style={{ margin: 0, fontSize: 12, color: "var(--theme-text-muted)" }}>
-                            Run simulated attack traffic:{" "}
-                            <code style={{ background: "var(--theme-bg)", border: "1px solid var(--theme-card-border)", padding: "2px 8px", borderRadius: 4, color: "#8b5cf6" }}>
-                              uv run simulate_attack.py --attack all
-                            </code>
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-
-                  {filteredEvents.map((e) => {
-                    const badge = STATE_BADGES[e.state] || STATE_BADGES.NORMAL;
-                    const catKey = e.attack_type || (e.is_attack ? "DDoS" : "Normal");
-                    const catMeta = CATEGORY_META[catKey] || CATEGORY_META.Normal;
-
-                    return (
-                      <tr
-                        key={e.id}
-                        style={{
-                          borderBottom: "1px solid var(--theme-card-border)",
-                          background:
-                            e.state === "ATTACK"
-                              ? "rgba(239,68,68,0.04)"
-                              : e.state === "SUSPICIOUS"
-                              ? "rgba(245,158,11,0.04)"
-                              : "transparent",
-                          transition: "background 0.2s",
-                        }}
-                        onMouseEnter={(ev) => {
-                          ev.currentTarget.style.background = "var(--theme-grid)";
-                        }}
-                        onMouseLeave={(ev) => {
-                          ev.currentTarget.style.background =
-                            e.state === "ATTACK"
-                              ? "rgba(239,68,68,0.04)"
-                              : e.state === "SUSPICIOUS"
-                              ? "rgba(245,158,11,0.04)"
-                              : "transparent";
-                        }}
-                      >
-                        {/* ID Column */}
-                        <td style={{ padding: "12px 14px", fontFamily: "monospace", color: "var(--theme-text-muted)", fontWeight: 700 }}>
-                          #{e.id}
-                        </td>
-
-                        {/* State Column */}
-                        <td style={{ padding: "12px 14px" }}>
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              padding: "4px 10px",
-                              borderRadius: 6,
-                              background: badge.bg,
-                              color: badge.color,
-                              border: `1px solid ${badge.border}`,
-                              fontSize: 11,
-                              fontWeight: 800,
-                              letterSpacing: "0.04em",
-                            }}
-                          >
-                            <span
-                              style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: "50%",
-                                background: badge.dot,
-                                boxShadow: `0 0 6px ${badge.dot}`,
-                              }}
-                            />
-                            {badge.label}
-                          </span>
-                        </td>
-
-                        {/* Attack Category Column */}
-                        <td style={{ padding: "12px 14px" }}>
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              padding: "4px 10px",
-                              borderRadius: 6,
-                              background: catMeta.bg,
-                              color: catMeta.color,
-                              border: `1px solid ${catMeta.border}`,
-                              fontSize: 11,
-                              fontWeight: 700,
-                            }}
-                          >
-                            <span>{catMeta.icon}</span>
-                            {catMeta.label}
-                          </span>
-                        </td>
-
-                        {/* Threat Probability Bar */}
-                        <td style={{ padding: "12px 14px" }}>
-                          <ProbBar value={e.attack_prob} />
-                        </td>
-
-                        {/* Protocol */}
-                        <td style={{ padding: "12px 14px" }}>
-                          <span
-                            style={{
-                              padding: "3px 8px",
-                              borderRadius: 5,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              background:
-                                e.protocol === "TCP"
-                                  ? "rgba(139,92,246,0.12)"
-                                  : e.protocol === "UDP"
-                                  ? "rgba(2,132,199,0.12)"
-                                  : "rgba(217,119,6,0.12)",
-                              color: e.protocol === "TCP" ? "#8b5cf6" : e.protocol === "UDP" ? "#0284c7" : "#d97706",
-                              border: `1px solid ${
-                                e.protocol === "TCP"
-                                  ? "rgba(139,92,246,0.3)"
-                                  : e.protocol === "UDP"
-                                  ? "rgba(2,132,199,0.3)"
-                                  : "rgba(217,119,6,0.3)"
-                              }`,
-                            }}
-                          >
-                            {e.protocol || "—"}
-                          </span>
-                        </td>
-
-                        {/* Source IP with Copy */}
-                        <td style={{ padding: "12px 14px" }}>
-                          <div
-                            onClick={() => handleCopyIp(e.src_ip)}
-                            title="Click to copy IP"
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                              background: "var(--theme-input-bg)",
-                              border: "1px solid var(--theme-input-border)",
-                              padding: "3px 8px",
-                              borderRadius: 5,
-                              fontFamily: "monospace",
-                              fontSize: 11,
-                              color: "var(--theme-fg)",
-                              cursor: "pointer",
-                            }}
-                          >
-                            {e.src_ip || "—"}
-                            <Copy size={11} style={{ color: "var(--theme-text-muted)" }} />
-                          </div>
-                        </td>
-
-                        {/* Destination IP with Copy */}
-                        <td style={{ padding: "12px 14px" }}>
-                          <div
-                            onClick={() => handleCopyIp(e.dst_ip)}
-                            title="Click to copy IP"
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                              background: "var(--theme-input-bg)",
-                              border: "1px solid var(--theme-input-border)",
-                              padding: "3px 8px",
-                              borderRadius: 5,
-                              fontFamily: "monospace",
-                              fontSize: 11,
-                              color: "var(--theme-fg)",
-                              cursor: "pointer",
-                            }}
-                          >
-                            {e.dst_ip || "—"}
-                            <Copy size={11} style={{ color: "var(--theme-text-muted)" }} />
-                          </div>
-                        </td>
-
-                        {/* Switch Node */}
-                        <td style={{ padding: "12px 14px", fontFamily: "monospace", fontSize: 11, color: "var(--theme-text-muted)" }}>
-                          <span style={{ background: "var(--theme-bg)", border: "1px solid var(--theme-card-border)", padding: "2px 6px", borderRadius: 4 }}>
-                            s{e.switch || "1"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════
-         ONLINE ISOLATION FOREST MODE
-         ═══════════════════════════════════════════════════════════════════════ */}
-      {mode === "ONLINE" && (
-        <>
-          {/* Online IF Threat Banner */}
-          <div
-            style={{
-              ...S.glass,
-              background: ifTc.bg,
-              border: `2px solid ${ifTc.border}`,
-              boxShadow: ifTc.glow,
-              padding: "20px 24px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: 16,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 16,
-                  background: `${ifTc.color}22`,
-                  border: `2px solid ${ifTc.color}55`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: ifTc.color,
-                }}
-              >
-                <IfThreatIcon size={28} />
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: ifTc.color }}>
-                  Online IF: {isIFAttack ? "Attack Anomaly Detected" : isIFSuspicious ? "Suspicious Flow Anomaly" : "Normal Baseline"}
-                </p>
-                <p style={{ margin: "3px 0 0", fontSize: 13, color: "var(--theme-text-muted)" }}>
-                  {worstIF
-                    ? `Phase: ${worstIF.phase} · Switch: ${worstIF.switch_id} · Anomaly Score: ${
-                        worstIF.raw_score?.toFixed(4) ?? "—"
-                      }`
-                    : "Waiting for live OpenDaylight telemetry — click Start Polling"}
-                </p>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={ifRunning ? stopIfPolling : startIfPolling}
-                disabled={ifConnected === false}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 10,
-                  border: "none",
-                  cursor: ifConnected === false ? "not-allowed" : "pointer",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  background: ifRunning ? "#dc2626" : "#6366f1",
-                  color: "#fff",
-                  opacity: ifConnected === false ? 0.4 : 1,
-                  transition: "all 0.2s",
-                }}
-              >
-                {ifRunning ? <Pause size={14} /> : <Play size={14} />}
-                {ifRunning ? "Stop Polling" : "Start IF Polling"}
-              </button>
-              <button
-                onClick={sendOnline}
-                disabled={ifConnected === false}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 10,
-                  cursor: ifConnected === false ? "not-allowed" : "pointer",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  background: "var(--theme-card)",
-                  border: "1px solid var(--theme-card-border)",
-                  color: "var(--theme-fg)",
-                  opacity: ifConnected === false ? 0.4 : 1,
-                  transition: "all 0.2s",
-                }}
-              >
-                Poll Once
-              </button>
-              <button
-                onClick={handleReset}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  background: "var(--theme-card)",
-                  border: "1px solid var(--theme-card-border)",
-                  color: "var(--theme-fg)",
-                  transition: "all 0.2s",
-                }}
-              >
-                <RefreshCw size={14} /> Reset
-              </button>
-            </div>
-          </div>
-
-          {/* Baseline Collection Progress Bar */}
-          {worstIF?.phase === "BASELINE" && (
-            <div style={{ ...S.glass, padding: "16px 24px" }}>
-              <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#0284c7" }}>
-                Collecting Baseline Telemetry… {worstIF.collected ?? 0} / {(worstIF.collected ?? 0) + (worstIF.remaining ?? 100)}{" "}
-                samples
-              </p>
-              <div style={{ height: 8, background: "var(--theme-card-border)", borderRadius: 4, overflow: "hidden" }}>
-                <div
-                  style={{
-                    height: "100%",
-                    borderRadius: 4,
-                    background: "#0284c7",
-                    width: `${Math.min(
-                      100,
-                      ((worstIF.collected ?? 0) / ((worstIF.collected ?? 0) + (worstIF.remaining ?? 100))) * 100
-                    )}%`,
-                    transition: "width 0.5s",
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Extracted IF Feature Cards */}
-          {ifLastFeatures && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-              {[
-                { key: "avg_packet_size", label: "Avg Pkt Size", unit: "Bytes", icon: "📦" },
-                { key: "bytes_per_second", label: "Bytes / Sec", unit: "B/s", icon: "📈" },
-                { key: "packet_count", label: "Packet Count", unit: "pkts", icon: "📊" },
-                { key: "active_flow_count", label: "Active Flows", unit: "flows", icon: "🔀" },
-                { key: "asymmetry", label: "Asymmetry", unit: "ratio", icon: "⚖️" },
-              ].map((f) => (
-                <div key={f.key} style={{ ...S.glassInner, padding: "14px 16px" }}>
-                  <p style={{ margin: 0, fontSize: 11, color: "var(--theme-text-muted)", textTransform: "uppercase", fontWeight: 600 }}>
-                    {f.icon} {f.label}
-                  </p>
-                  <p style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 700, color: "var(--theme-fg)", fontFamily: "monospace" }}>
-                    {ifLastFeatures[f.key] != null
-                      ? parseFloat(Number(ifLastFeatures[f.key]).toFixed(2)).toLocaleString()
-                      : "—"}{" "}
-                    <span style={{ fontSize: 10, color: "var(--theme-text-muted)" }}>{f.unit}</span>
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* IF Event Log Table */}
-          <div style={{ ...S.glass, overflow: "hidden" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "16px 20px",
-                borderBottom: "1px solid var(--theme-card-border)",
-                background: "var(--theme-card)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <Activity size={18} style={{ color: "#6366f1" }} />
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "var(--theme-fg)" }}>
-                  Isolation Forest Telemetry Log
-                </p>
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "var(--theme-text-muted)",
-                    background: "var(--theme-bg)",
-                    border: "1px solid var(--theme-card-border)",
-                    padding: "2px 8px",
-                    borderRadius: 6,
-                  }}
-                >
-                  {ifLog.length} entries
-                </span>
-              </div>
-              <button
-                onClick={() => setIfLog([])}
-                style={{ fontSize: 12, color: "#dc2626", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}
-              >
-                Clear Log
-              </button>
-            </div>
-
-            <div style={{ maxHeight: 440, overflowY: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
-                <thead>
-                  <tr style={{ background: "var(--theme-bg)" }}>
-                    {["Time", "Switch Node", "Anomaly State", "Raw Score", "Phase"].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: "12px 14px",
-                          color: "var(--theme-text-muted)",
-                          fontWeight: 700,
-                          fontSize: 11,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          borderBottom: "1px solid var(--theme-card-border)",
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {ifLog.length === 0 && (
-                    <tr>
-                      <td colSpan={5} style={{ padding: "40px 20px", textAlign: "center", color: "var(--theme-text-muted)" }}>
-                        No Isolation Forest telemetry logged yet. Click <strong>Start IF Polling</strong> above to stream live ODL metrics.
-                      </td>
-                    </tr>
-                  )}
-
-                  {ifLog.map((e, i) => {
-                    const badge = STATE_BADGES[e.state] || { bg: "rgba(100,116,139,0.12)", color: "#64748b", border: "rgba(100,116,139,0.3)", label: e.state || e.phase || "—" };
-                    return (
-                      <tr
-                        key={i}
-                        style={{
-                          borderBottom: "1px solid var(--theme-card-border)",
-                          background: e.state === "ATTACK" ? "rgba(239,68,68,0.04)" : "transparent",
-                        }}
-                      >
-                        <td style={{ padding: "12px 14px", color: "var(--theme-text-muted)", fontFamily: "monospace" }}>{e._ts}</td>
-                        <td style={{ padding: "12px 14px", fontFamily: "monospace", color: "var(--theme-fg)" }}>
-                          <span style={{ background: "var(--theme-bg)", border: "1px solid var(--theme-card-border)", padding: "2px 6px", borderRadius: 4 }}>
-                            {e.switch_id ?? "global"}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <span
-                            style={{
-                              padding: "4px 10px",
-                              borderRadius: 6,
-                              background: badge.bg,
-                              color: badge.color,
-                              border: `1px solid ${badge.border}`,
-                              fontSize: 11,
-                              fontWeight: 800,
-                            }}
-                          >
-                            {e.state || e.phase || "—"}
-                          </span>
-                        </td>
-                        <td style={{ padding: "12px 14px", fontFamily: "monospace", color: "var(--theme-fg)", fontWeight: 700 }}>
-                          {e.raw_score?.toFixed(4) ?? "—"}
-                        </td>
-                        <td style={{ padding: "12px 14px", color: "var(--theme-text-muted)" }}>{e.phase ?? "DETECTION"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Pulse animation keyframes */}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.7; transform: scale(1.05); }
-        }
-      `}</style>
     </div>
   );
 }

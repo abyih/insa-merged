@@ -8,6 +8,12 @@ const ODL_CONFIG = {
 	password: "admin",
 };
 
+const ONOS_CONFIG = {
+	baseURL: "/api/onos/v1",
+	username: "onos",
+	password: "rocks",
+};
+
 const AUTH = { username: ODL_CONFIG.username, password: ODL_CONFIG.password };
 const HEADERS = { "Content-Type": "application/json", Accept: "application/json" };
 
@@ -18,9 +24,42 @@ const odlApi = axios.create({
 	auth: AUTH,
 });
 
+const onosApi = axios.create({
+	baseURL: ONOS_CONFIG.baseURL,
+	timeout: 5000,
+	headers: {
+		...HEADERS,
+		Authorization: "Basic " + btoa(`${ONOS_CONFIG.username}:${ONOS_CONFIG.password}`),
+	},
+});
+
+// Avoid sending Content-Type on GET requests which causes ONOS JAX-RS to return 415
+onosApi.interceptors.request.use((config) => {
+	if (config.method?.toLowerCase() === "get") {
+		delete config.headers["Content-Type"];
+	}
+	return config;
+});
+
+let detectedController = null; // 'onos' | 'odl'
+
+async function detectController() {
+	if (detectedController) return detectedController;
+	try {
+		const res = await onosApi.get("/devices");
+		if (res.data?.devices) {
+			detectedController = "onos";
+			return "onos";
+		}
+	} catch {
+		// not onos
+	}
+	detectedController = "odl";
+	return "odl";
+}
+
 /**
  * Try RFC-8040 endpoint, fall back to legacy /restconf/operational/ on 404/409.
- * Legacy path kept in case of older ODL versions.
  */
 async function getWithFallback(rfc8040Path, legacyPath) {
 	try {
@@ -29,7 +68,6 @@ async function getWithFallback(rfc8040Path, legacyPath) {
 	} catch (err) {
 		const status = err.response?.status;
 		if (status === 404 || status === 409) {
-			console.warn(`[ODL] RFC-8040 failed (${status}), trying legacy endpoint: ${legacyPath}`);
 			try {
 				const legacyApi = axios.create({
 					baseURL: "/api/restconf/operational/",
@@ -51,29 +89,114 @@ async function getWithFallback(rfc8040Path, legacyPath) {
 function handleError(error) {
 	if (error.response) {
 		console.error(
-			`ODL API Error: ${error.response.status}`,
+			`Controller API Error: ${error.response.status}`,
 			error.response.data
 		);
 		throw new Error(
-			`ODL API Error: ${error.response.status} ${JSON.stringify(
+			`Controller API Error: ${error.response.status} ${JSON.stringify(
 				error.response.data
 			)}`
 		);
 	} else {
-		console.error("ODL API Network Error:", error.message);
-		throw new Error(`ODL API Error: ${error.message}`);
+		console.error("Controller API Network Error:", error.message);
+		throw new Error(`Controller API Error: ${error.message}`);
 	}
 }
 
 // ==== Inventory & Topology ====
 
 export async function getNodes() {
+	const cType = await detectController();
+	if (cType === "onos") {
+		try {
+			const [devRes, flowsRes] = await Promise.all([
+				onosApi.get("/devices").catch(() => ({ data: { devices: [] } })),
+				onosApi.get("/flows").catch(() => ({ data: { flows: [] } })),
+			]);
+
+			const rawDevices = devRes.data?.devices || [];
+			const devices = rawDevices.filter((d) => d.available === true || d.available === "true");
+			const flows = flowsRes.data?.flows || [];
+
+			// Fetch ports for each device in parallel
+			const portsList = await Promise.all(
+				devices.map((d) =>
+					onosApi
+						.get(`/devices/${encodeURIComponent(d.id)}/ports`)
+						.then((r) => r.data?.ports || [])
+						.catch(() => [])
+				)
+			);
+
+			const nodeArray = devices.map((d, idx) => {
+				const ports = portsList[idx] || [];
+				const devFlows = flows.filter((f) => f.deviceId === d.id);
+				return {
+					id: d.id,
+					"flow-node-inventory:ip-address":
+						d.annotations?.managementAddress ||
+						d.annotations?.ipaddress ||
+						"127.0.0.1",
+					"flow-node-inventory:hardware": d.hw || d.type || "OpenFlow Switch",
+					"flow-node-inventory:description":
+						d.annotations?.datapathDescription || d.id,
+					"flow-node-inventory:manufacturer": d.mfr || "ONOS Managed Device",
+					"flow-node-inventory:serial-number": d.serial || d.chassisId || "N/A",
+					"flow-node-inventory:software": d.sw ? `ONOS (${d.sw})` : "ONOS",
+					"node-connector": ports.map((p) => ({
+						id: `${d.id}:${p.port}`,
+						"flow-node-inventory:name":
+							p.annotations?.portName || `${d.id}:${p.port}`,
+						"flow-node-inventory:port-number": p.port,
+						"flow-node-inventory:hardware-address":
+							p.annotations?.portMac || "N/A",
+						"flow-node-inventory:current-speed": p.portSpeed || 10000,
+						"flow-node-inventory:maximum-speed": p.portSpeed || 10000,
+						"flow-node-inventory:state": {
+							"link-down": !p.isEnabled,
+							live: p.isEnabled,
+							blocked: false,
+						},
+						"opendaylight-port-statistics:flow-capable-node-connector-statistics": {
+							packets: { transmitted: 0, received: 0 },
+							bytes: { transmitted: 0, received: 0 },
+							duration: { second: 0, nanosecond: 0 },
+						},
+					})),
+					"flow-node-inventory:table": [
+						{
+							id: 0,
+							flow: devFlows.map((f) => ({
+								id: f.id,
+								priority: f.priority,
+								table_id: f.tableId ?? 0,
+								"opendaylight-flow-statistics:flow-statistics": {
+									"packet-count": f.packets || 0,
+									"byte-count": f.bytes || 0,
+									duration: { second: f.life || 0, nanosecond: 0 },
+								},
+							})),
+						},
+					],
+				};
+			});
+
+			return {
+				"opendaylight-inventory:nodes": {
+					node: nodeArray,
+				},
+			};
+		} catch (err) {
+			console.error("[ONOS] Error getting nodes:", err);
+			return { "opendaylight-inventory:nodes": { node: [] } };
+		}
+	}
+
 	try {
 		const data = await getWithFallback(
 			"opendaylight-inventory:nodes?content=nonconfig",
 			"opendaylight-inventory:nodes"
 		);
-		console.log(data);
 		return data;
 	} catch (err) {
 		handleError(err);
@@ -81,6 +204,24 @@ export async function getNodes() {
 }
 
 export async function getTopology() {
+	const cType = await detectController();
+	if (cType === "onos") {
+		try {
+			const [devRes, linkRes, hostRes] = await Promise.all([
+				onosApi.get("/devices").catch(() => ({ data: { devices: [] } })),
+				onosApi.get("/links").catch(() => ({ data: { links: [] } })),
+				onosApi.get("/hosts").catch(() => ({ data: { hosts: [] } })),
+			]);
+			return {
+				devices: devRes.data?.devices || [],
+				links: linkRes.data?.links || [],
+				hosts: hostRes.data?.hosts || [],
+			};
+		} catch (err) {
+			handleError(err);
+		}
+	}
+
 	try {
 		const data = await getWithFallback(
 			"network-topology:network-topology?content=nonconfig",
@@ -93,11 +234,69 @@ export async function getTopology() {
 }
 
 export async function getNodeConnectors(nodeId) {
+	const cType = await detectController();
+	if (cType === "onos") {
+		try {
+			const [devRes, portRes, flowsRes] = await Promise.all([
+				onosApi.get(`/devices/${encodeURIComponent(nodeId)}`).catch(() => null),
+				onosApi.get(`/devices/${encodeURIComponent(nodeId)}/ports`).catch(() => ({ data: { ports: [] } })),
+				onosApi.get(`/flows/${encodeURIComponent(nodeId)}`).catch(() => ({ data: { flows: [] } })),
+			]);
+			const d = devRes?.data || { id: nodeId };
+			const ports = portRes.data?.ports || [];
+			const flows = flowsRes.data?.flows || [];
+
+			return {
+				"opendaylight-inventory:node": [
+					{
+						id: d.id || nodeId,
+						"flow-node-inventory:ip-address":
+							d.annotations?.managementAddress || d.annotations?.ipaddress || "127.0.0.1",
+						"flow-node-inventory:hardware": d.hw || d.type || "OpenFlow Switch",
+						"flow-node-inventory:description": d.annotations?.datapathDescription || d.id || nodeId,
+						"flow-node-inventory:manufacturer": d.mfr || "ONOS Managed Device",
+						"flow-node-inventory:serial-number": d.serial || d.chassisId || "N/A",
+						"flow-node-inventory:software": d.sw ? `ONOS (${d.sw})` : "ONOS",
+						"node-connector": ports.map((p) => ({
+							id: `${nodeId}:${p.port}`,
+							"flow-node-inventory:name": p.annotations?.portName || `${nodeId}:${p.port}`,
+							"flow-node-inventory:port-number": p.port,
+							"flow-node-inventory:hardware-address": p.annotations?.portMac || "N/A",
+							"flow-node-inventory:current-speed": p.portSpeed || 10000,
+							"flow-node-inventory:maximum-speed": p.portSpeed || 10000,
+							"flow-node-inventory:state": {
+								"link-down": !p.isEnabled,
+								live: p.isEnabled,
+								blocked: false,
+							},
+						})),
+						"flow-node-inventory:table": [
+							{
+								id: 0,
+								flow: flows.map((f) => ({
+									id: f.id,
+									priority: f.priority,
+									table_id: f.tableId ?? 0,
+									"opendaylight-flow-statistics:flow-statistics": {
+										"packet-count": f.packets || 0,
+										"byte-count": f.bytes || 0,
+										duration: { second: f.life || 0, nanosecond: 0 },
+									},
+								})),
+							},
+						],
+					},
+				],
+			};
+		} catch (err) {
+			handleError(err);
+		}
+	}
+
 	try {
 		const res = await odlApi.get(
 			`opendaylight-inventory:nodes/node=${encodeURIComponent(nodeId)}?content=nonconfig`
 		);
-		console.log(res.data);
 		return res.data;
 	} catch (err) {
 		handleError(err);
@@ -107,6 +306,10 @@ export async function getNodeConnectors(nodeId) {
 // ==== Flow Tables and Entries ====
 
 export async function getNodeTables(nodeId) {
+	const cType = await detectController();
+	if (cType === "onos") {
+		return { "flow-node-inventory:table": [{ id: 0 }] };
+	}
 	try {
 		const res = await odlApi.get(
 			`opendaylight-inventory:nodes/node=${encodeURIComponent(nodeId)}/flow-node-inventory:table?content=nonconfig`
@@ -118,6 +321,15 @@ export async function getNodeTables(nodeId) {
 }
 
 export async function getFlows(nodeId, tableId = 0) {
+	const cType = await detectController();
+	if (cType === "onos") {
+		try {
+			const res = await onosApi.get(`/flows/${encodeURIComponent(nodeId)}`);
+			return res.data?.flows || [];
+		} catch (err) {
+			handleError(err);
+		}
+	}
 	try {
 		const res = await odlApi.get(
 			`opendaylight-inventory:nodes/node=${encodeURIComponent(nodeId)}/flow-node-inventory:table=${tableId}?content=nonconfig`
@@ -129,6 +341,30 @@ export async function getFlows(nodeId, tableId = 0) {
 }
 
 export async function getAllFlows(nodeId) {
+	const cType = await detectController();
+	if (cType === "onos") {
+		try {
+			const res = await onosApi.get(`/flows/${encodeURIComponent(nodeId)}`);
+			const flows = res.data?.flows || [];
+			return [
+				{
+					id: 0,
+					flow: flows.map((f) => ({
+						id: f.id,
+						priority: f.priority,
+						table_id: f.tableId ?? 0,
+						"opendaylight-flow-statistics:flow-statistics": {
+							"packet-count": f.packets || 0,
+							"byte-count": f.bytes || 0,
+							duration: { second: f.life || 0, nanosecond: 0 },
+						},
+					})),
+				},
+			];
+		} catch (err) {
+			handleError(err);
+		}
+	}
 	try {
 		const res = await odlApi.get(
 			`opendaylight-inventory:nodes/node=${encodeURIComponent(nodeId)}?content=nonconfig`
@@ -212,14 +448,8 @@ export async function getNodeConnectorStats(nodeId, connectorId) {
 export async function getConnectionStats() {
   try {
     const [nodesData, topoData] = await Promise.all([
-      getWithFallback(
-        "opendaylight-inventory:nodes?content=nonconfig",
-        "opendaylight-inventory:nodes"
-      ),
-      getWithFallback(
-        "network-topology:network-topology?content=nonconfig",
-        "network-topology:network-topology"
-      ).catch(() => null),
+      getNodes().catch(() => null),
+      getTopology().catch(() => null),
     ]);
 
     const nodes = nodesData?.["opendaylight-inventory:nodes"]?.node || [];
@@ -243,19 +473,23 @@ export async function getConnectionStats() {
       }
     });
 
-    // Real host connections: nodes of type "host" in the host-tracker topology
+    // Real host connections
     let hostConnections = 0;
     if (topoData) {
-      const topologies =
-        topoData?.["network-topology:network-topology"]?.topology || [];
-      topologies.forEach(topo => {
-        (topo.node || []).forEach(n => {
-          const isHost =
-            n["node-id"]?.startsWith("host:") ||
-            n["host-tracker-service:attachment-points"] !== undefined;
-          if (isHost) hostConnections++;
+      if (Array.isArray(topoData.hosts)) {
+        hostConnections = topoData.hosts.length;
+      } else {
+        const topologies =
+          topoData?.["network-topology:network-topology"]?.topology || [];
+        topologies.forEach(topo => {
+          (topo.node || []).forEach(n => {
+            const isHost =
+              n["node-id"]?.startsWith("host:") ||
+              n["host-tracker-service:attachment-points"] !== undefined;
+            if (isHost) hostConnections++;
+          });
         });
-      });
+      }
     }
 
     return [
@@ -268,5 +502,199 @@ export async function getConnectionStats() {
     return [];
   }
 }
+// ==== ONOS Meters (for Network Slicing) ====
+
+export async function getMeters(deviceId) {
+	try {
+		const url = deviceId
+			? `/meters/${encodeURIComponent(deviceId)}`
+			: "/meters";
+		const res = await onosApi.get(url);
+		return res.data?.meters || [];
+	} catch (err) {
+		if (err.response?.status === 404) return [];
+		handleError(err);
+	}
+}
+
+export async function createMeter(deviceId, meterData) {
+	try {
+		const payload = {
+			appId: "org.onosproject.rest",
+			...meterData,
+		};
+		const res = await onosApi.post(
+			`/meters/${encodeURIComponent(deviceId)}`,
+			payload
+		);
+		const loc = res.headers?.location || res.headers?.Location || "";
+		let id = null;
+		if (loc) {
+			const parts = loc.trim().split("/");
+			id = parts[parts.length - 1];
+		}
+		if (!id && res.data?.id) id = res.data.id;
+		if (!id && res.data?.meters?.[0]?.id) id = res.data.meters[0].id;
+		return { id, data: res.data, location: loc };
+	} catch (err) {
+		handleError(err);
+	}
+}
+
+export async function deleteMeter(deviceId, meterId) {
+	try {
+		const res = await onosApi.delete(
+			`/meters/${encodeURIComponent(deviceId)}/${encodeURIComponent(meterId)}`
+		);
+		return res.data;
+	} catch (err) {
+		handleError(err);
+	}
+}
+
+// ==== ONOS Intents (for Network Slicing) ====
+
+export async function getIntents() {
+	try {
+		const res = await onosApi.get("/intents");
+		return res.data?.intents || [];
+	} catch (err) {
+		if (err.response?.status === 404) return [];
+		handleError(err);
+	}
+}
+
+export async function createIntent(intentData) {
+	try {
+		const res = await onosApi.post("/intents", intentData);
+		return res.data;
+	} catch (err) {
+		handleError(err);
+	}
+}
+
+export async function deleteIntent(appId, intentKey) {
+	try {
+		const res = await onosApi.delete(
+			`/intents/${encodeURIComponent(appId)}/${encodeURIComponent(intentKey)}`
+		);
+		return res.data;
+	} catch (err) {
+		handleError(err);
+	}
+}
+
+// ==== ONOS Flow Rules for Slicing (with meter + VLAN support) ====
+
+export async function installOnosFlow(deviceId, flowData) {
+	try {
+		const url = `/flows/${encodeURIComponent(deviceId)}?appId=org.onosproject.rest`;
+		const payload = flowData.flows ? flowData : { flows: [flowData] };
+		const res = await onosApi.post(url, payload);
+		const loc = res.headers?.location || res.headers?.Location || "";
+		let id = null;
+		if (loc) {
+			const parts = loc.trim().split("/");
+			id = parts[parts.length - 1];
+		}
+
+		if (!id) {
+			try {
+				const flowsRes = await onosApi.get(`/flows/${encodeURIComponent(deviceId)}`);
+				const flows = flowsRes.data?.flows || [];
+				const target = flowData.flows?.[0] || flowData;
+				const srcMac = target.selector?.criteria?.find((c) => c.type === "ETH_SRC")?.mac?.toLowerCase();
+				const dstMac = target.selector?.criteria?.find((c) => c.type === "ETH_DST")?.mac?.toLowerCase();
+				const priority = target.priority;
+
+				const matching = flows.find((f) => {
+					if (f.priority !== priority) return false;
+					const fSrc = f.selector?.criteria?.find((c) => c.type === "ETH_SRC")?.mac?.toLowerCase();
+					const fDst = f.selector?.criteria?.find((c) => c.type === "ETH_DST")?.mac?.toLowerCase();
+					if (srcMac && fSrc !== srcMac) return false;
+					if (dstMac && fDst !== dstMac) return false;
+					return true;
+				});
+				if (matching) {
+					id = matching.id;
+				}
+			} catch {
+				/* silent */
+			}
+		}
+
+		return { ...res.data, id: id || res.data?.flows?.[0]?.id, flowId: id || res.data?.flows?.[0]?.id };
+	} catch (err) {
+		// Fallback to sending raw object if flows wrapper is rejected by specific ONOS version
+		try {
+			const res2 = await onosApi.post(
+				`/flows/${encodeURIComponent(deviceId)}?appId=org.onosproject.rest`,
+				flowData
+			);
+			return res2.data;
+		} catch (err2) {
+			handleError(err2);
+		}
+	}
+}
+
+export async function deleteOnosFlow(deviceId, flowId) {
+	try {
+		const res = await onosApi.delete(
+			`/flows/${encodeURIComponent(deviceId)}/${encodeURIComponent(flowId)}`
+		);
+		return res.data;
+	} catch (err) {
+		handleError(err);
+	}
+}
+
+export async function getOnosFlows(deviceId) {
+	try {
+		const url = deviceId
+			? `/flows/${encodeURIComponent(deviceId)}`
+			: "/flows";
+		const res = await onosApi.get(url);
+		return res.data?.flows || [];
+	} catch (err) {
+		if (err.response?.status === 404) return [];
+		handleError(err);
+	}
+}
+
+export async function getDevices(onlyAvailable = true) {
+	try {
+		const res = await onosApi.get("/devices");
+		const allDevices = res.data?.devices || [];
+		if (onlyAvailable) {
+			return allDevices.filter((d) => d.available === true || d.available === "true");
+		}
+		return allDevices;
+	} catch (err) {
+		if (err.response?.status === 404) return [];
+		handleError(err);
+	}
+}
+
+export async function getLinks() {
+	try {
+		const res = await onosApi.get("/links");
+		return res.data?.links || [];
+	} catch (err) {
+		if (err.response?.status === 404) return [];
+		handleError(err);
+	}
+}
+
+export async function getHosts() {
+	try {
+		const res = await onosApi.get("/hosts");
+		return res.data?.hosts || [];
+	} catch (err) {
+		if (err.response?.status === 404) return [];
+		handleError(err);
+	}
+}
+
 // ==== Export Config & axios if needed ====
-export { ODL_CONFIG, odlApi };
+export { ODL_CONFIG, ONOS_CONFIG, odlApi, onosApi };

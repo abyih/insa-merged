@@ -3,7 +3,7 @@ import { DataSet } from "vis-data";
 import { Network } from "vis-network";
 import { X, Info, Layout, Server, Globe, Monitor, Cpu, Network as NetIcon } from "lucide-react";
 
-const CloudTopology = ({ virtualMachines, networks, routers, ports, onClose }) => {
+const CloudTopology = ({ virtualMachines, networks, routers, ports, slices = [], onClose }) => {
   const containerRef = useRef(null);
   const [networkInstance, setNetworkInstance] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
@@ -42,13 +42,27 @@ const CloudTopology = ({ virtualMachines, networks, routers, ports, onClose }) =
     // 3. Add Virtual Machines
     virtualMachines?.forEach((vm) => {
       const isActive = vm.status === "ACTIVE";
+
+      // Check if VM belongs to an OpenStack slice
+      let sliceInfo = null;
+      (slices || []).forEach((s) => {
+        let vms = [];
+        try {
+          vms = typeof s.vm_ids === "string" ? JSON.parse(s.vm_ids) : s.vm_ids || [];
+        } catch {}
+        if (vms.includes(vm.id)) {
+          sliceInfo = s;
+        }
+      });
+
       nodesArray.push({
         id: vm.id,
         label: vm.name || "VM",
-        title: `<b>Virtual Machine</b><br>Name: <b>${vm.name}</b><br>IP: <b>${vm.ip || "N/A"}</b><br>Status: <b>${vm.status}</b><br>Network: <b>${vm.network || "N/A"}</b><br>Zone: <b>${vm.zone || "N/A"}</b>`,
+        title: `<b>Virtual Machine</b><br>Name: <b>${vm.name}</b><br>IP: <b>${vm.ip || "N/A"}</b><br>Status: <b>${vm.status}</b><br>Network: <b>${vm.network || "N/A"}</b><br>Zone: <b>${vm.zone || "N/A"}</b>${sliceInfo ? `<br>Slice: <b>${sliceInfo.name}</b>` : ""}`,
         group: isActive ? "vm-active" : "vm-inactive",
         value: 20,
-        entityData: vm,
+        color: sliceInfo ? { background: sliceInfo.color || "#6366f1", border: "#ffffff" } : undefined,
+        entityData: { ...vm, slice: sliceInfo },
       });
 
       // Connect VM to its network
@@ -521,6 +535,15 @@ const CloudTopology = ({ virtualMachines, networks, routers, ports, onClose }) =
             <span className="w-5 h-0.5 bg-emerald-500 rounded-full inline-block" />
             <span>VM Link</span>
           </div>
+          {(slices || []).map((s) => (
+            <div key={s.id} className="flex items-center gap-2">
+              <span
+                className="w-3.5 h-3.5 rounded-full inline-block border border-white/20 shadow-sm"
+                style={{ backgroundColor: s.color || "#6366f1" }}
+              />
+              <span>{s.name} (Slice)</span>
+            </div>
+          ))}
         </div>
       </div>
 

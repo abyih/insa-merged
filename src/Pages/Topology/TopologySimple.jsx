@@ -8,10 +8,13 @@ import { RefreshCw, Layout, Info, Server, Cpu, Network as NetIcon, Monitor, Shie
 const TopologySimple = ({
 	topologyData,
 	title = "Logical Network Topology",
+	currentFilter = "all",
+	onFilterChange,
 	onReload,
 	crossCheckOpenstack = true,
 	onToggleCrossCheck,
 	openstackConnected = true,
+	externalPath,
 }) => {
 	const containerRef = useRef(null);
 	const edgesRef = useRef(null);
@@ -280,6 +283,12 @@ const TopologySimple = ({
 			dots.forEach((el) => el.remove());
 		};
 	}, [buildGraph, findNodeByMac, topologyData]);
+
+	useEffect(() => {
+		if (externalPath && externalPath.length > 1 && edgesRef.current) {
+			highlightPath(externalPath);
+		}
+	}, [externalPath]);
 
 	const renderNodeDetails = () => {
 		if (!selectedNode) {

@@ -2,15 +2,20 @@ import { Link, useLocation } from "react-router-dom";
 // import "./Sidebar.css"; // Optional: Add your own styles
 
 const links = [
+	{ title: "Dashboard", link: "/dashboard" },
 	{ title: "Nodes", link: "/nodes" },
 	{ title: "Topology", link: "/topology" },
 	{ title: "Flows", link: "/flows" },
 	{ title: "Flow Manager", link: "/flow-manager" },
+	{ title: "Path Trace", link: "/path-trace" },
 	{ title: "Anomaly Detector", link: "/anomaly" },
-	{ title: "Api-Tester", link: "/api-tester" },
-	{ title: "Modules", link: "/modules" },
-	{ title: "Yangman", link: "/yangui" },
 	{ title: "Cloud", link: "/cloud" },
+	{ title: "ONOS Slicing", link: "/network-slicing" },
+	{ title: "OpenStack Slices", link: "/slices" },
+	{ title: "VM Topology Map", link: "/vm-topology" },
+	{ title: "Stats", link: "/stats" },
+	{ title: "Api-Tester", link: "/api-tester" },
+	{ title: "Yangman", link: "/yangui" },
 ];
 
 const Sidebar = () => {

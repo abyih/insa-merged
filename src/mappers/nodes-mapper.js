@@ -53,7 +53,7 @@ export const mapNodeConnectors = (connectors = []) => {
 export const mapNodes = (rawData, topologyData) => {
 	const inventoryNodes = rawData?.["opendaylight-inventory:nodes"]?.node || [];
 	const mappedNodes = [];
-	const seenIds = new Set();
+	const nodeMap = new Map();
 
 	// 1. Map OpenFlow inventory nodes
 	inventoryNodes.forEach((node) => {
@@ -70,37 +70,43 @@ export const mapNodes = (rawData, topologyData) => {
 		else status = "up";
 
 		const id = node.id;
-		const isDevstackBridge =
-			id.includes("ovsdb") ||
-			connectors.some(
-				(c) =>
-					c.name?.startsWith("tap") ||
-					c.name?.startsWith("patch") ||
-					c.name === "br-int" ||
-					c.name === "br-ex"
-			) ||
+		const hw = node["flow-node-inventory:hardware"] || "";
+		const hasBrInt = connectors.some(
+			(c) =>
+				c.name === "br-int" ||
+				c.name === "br-ex" ||
+				c.name?.startsWith("tap") ||
+				c.name?.startsWith("patch")
+		);
+		const isOvsdb = id.includes("ovsdb") || hw.includes("Host");
+		const isBridge =
+			hasBrInt ||
+			hw.includes("Bridge") ||
+			id.includes("br-int") ||
 			(id.startsWith("openflow:") && Number(id.replace("openflow:", "")) > 100000);
 
-		const type = isDevstackBridge
+		const type = isBridge
 			? "Integration Bridge"
+			: isOvsdb
+			? "OVS Host"
 			: id.startsWith("host:")
 			? "Host"
 			: "OpenFlow Switch";
-		seenIds.add(id);
 
-		mappedNodes.push({
+		const mapped = {
 			id,
 			type,
 			connectors,
 			status,
-		});
+		};
+		nodeMap.set(id, mapped);
+		mappedNodes.push(mapped);
 	});
 
 	// 2. Map DevStack / OVSDB / Network Topology nodes
 	const topoNodes = topologyData?.nodes || [];
 	topoNodes.forEach((tn) => {
-		if (!tn || !tn.id || seenIds.has(tn.id)) return;
-		seenIds.add(tn.id);
+		if (!tn || !tn.id) return;
 
 		const nodeDetails = tn.nodeDetails || {};
 		const type =
@@ -115,7 +121,7 @@ export const mapNodes = (rawData, topologyData) => {
 				? "External Bridge"
 				: tn.group === "host"
 				? "Host"
-				: "Switch");
+				: "OpenFlow Switch");
 
 		let status = "up";
 		if (type === "Virtual Machine" && nodeDetails.ifaceStatus) {
@@ -149,13 +155,26 @@ export const mapNodes = (rawData, topologyData) => {
 			];
 		}
 
-		mappedNodes.push({
-			id: tn.id,
-			type,
-			connectors,
-			status,
-			nodeDetails,
-		});
+		if (nodeMap.has(tn.id)) {
+			const existing = nodeMap.get(tn.id);
+			if (type !== "OpenFlow Switch") {
+				existing.type = type;
+			}
+			existing.nodeDetails = { ...existing.nodeDetails, ...nodeDetails };
+			if (connectors.length > existing.connectors.length) {
+				existing.connectors = connectors;
+			}
+		} else {
+			const newNode = {
+				id: tn.id,
+				type,
+				connectors,
+				status,
+				nodeDetails,
+			};
+			nodeMap.set(tn.id, newNode);
+			mappedNodes.push(newNode);
+		}
 	});
 
 	return mappedNodes;
