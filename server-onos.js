@@ -115,7 +115,9 @@ app.get(["/api/onos/slices", "/api/onos-service/slices"], (req, res) => {
       type: r.slice_type,
       color: r.color,
       vlanId: r.vlan_id,
+      bandwidth: r.bandwidth_kbps,
       bandwidthKbps: r.bandwidth_kbps,
+      burstSize: r.burst_kbps,
       burstKbps: r.burst_kbps,
       hosts: JSON.parse(r.hosts || "[]"),
       status: r.status,
@@ -141,7 +143,9 @@ app.get(["/api/onos/slices/:id", "/api/onos-service/slices/:id"], (req, res) => 
       type: r.slice_type,
       color: r.color,
       vlanId: r.vlan_id,
+      bandwidth: r.bandwidth_kbps,
       bandwidthKbps: r.bandwidth_kbps,
+      burstSize: r.burst_kbps,
       burstKbps: r.burst_kbps,
       hosts: JSON.parse(r.hosts || "[]"),
       status: r.status,
@@ -172,7 +176,7 @@ app.post(["/api/onos/slices", "/api/onos-service/slices"], (req, res) => {
         WHERE id = ?
       `).run(
         s.name, s.type || s.slice_type || "CUSTOM", s.color || "#6366f1", s.vlanId || s.vlan_id || null,
-        s.bandwidthKbps || s.bandwidth_kbps || 10000, s.burstKbps || s.burst_kbps || 15000,
+        s.bandwidth ?? s.bandwidthKbps ?? s.bandwidth_kbps ?? 10000, s.burstSize ?? s.burstKbps ?? s.burst_kbps ?? 15000,
         JSON.stringify(s.hosts || []), s.status || "ACTIVE",
         JSON.stringify(s.meterIds || s.meter_ids || {}), JSON.stringify(s.flowRuleIds || s.flow_rule_ids || []),
         s.priority || 40000, s.id
@@ -185,7 +189,7 @@ app.post(["/api/onos/slices", "/api/onos-service/slices"], (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         s.id, s.name, s.type || s.slice_type || "CUSTOM", s.color || "#6366f1", s.vlanId || s.vlan_id || null,
-        s.bandwidthKbps || s.bandwidth_kbps || 10000, s.burstKbps || s.burst_kbps || 15000,
+        s.bandwidth ?? s.bandwidthKbps ?? s.bandwidth_kbps ?? 10000, s.burstSize ?? s.burstKbps ?? s.burst_kbps ?? 15000,
         JSON.stringify(s.hosts || []), s.status || "ACTIVE",
         JSON.stringify(s.meterIds || s.meter_ids || {}), JSON.stringify(s.flowRuleIds || s.flow_rule_ids || []),
         s.priority || 40000

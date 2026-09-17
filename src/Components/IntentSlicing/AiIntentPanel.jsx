@@ -64,9 +64,11 @@ const PRESET_INTENTS = [
 ];
 
 function formatRate(kbps) {
-  if (kbps >= 1000000) return (kbps / 1000000).toFixed(1) + " GB/s";
-  if (kbps >= 1000) return (kbps / 1000).toFixed(1) + " MB/s";
-  return kbps + " KB/s";
+  const rate = Number(kbps);
+  if (!kbps || isNaN(rate) || rate <= 0) return "0 KB/s";
+  if (rate >= 1000000) return (rate / 1000000).toFixed(1) + " GB/s";
+  if (rate >= 1000) return (rate / 1000).toFixed(1) + " MB/s";
+  return rate + " KB/s";
 }
 
 export default function AiIntentPanel({

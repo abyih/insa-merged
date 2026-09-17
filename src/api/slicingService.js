@@ -114,14 +114,30 @@ function getNextVlanId() {
 
 // ─── Local & SQLite persistence ──────────────────────────────────────────────
 
+export function normalizeSlice(s) {
+  if (!s || typeof s !== "object") return s;
+  const rawBw = s.bandwidth ?? s.bandwidthKbps ?? s.bandwidth_kbps;
+  const bandwidth = rawBw !== undefined && rawBw !== null && !isNaN(Number(rawBw)) ? Number(rawBw) : 10000;
+  const rawBurst = s.burstSize ?? s.burstKbps ?? s.burst_kbps;
+  const burstSize = rawBurst !== undefined && rawBurst !== null && !isNaN(Number(rawBurst)) ? Number(rawBurst) : Math.round(bandwidth * 0.2);
+  return {
+    ...s,
+    bandwidth,
+    bandwidthKbps: bandwidth,
+    burstSize,
+    burstKbps: burstSize,
+  };
+}
+
 export async function fetchSlicesFromDb() {
   try {
     const res = await fetch("/api/onos/slices");
     if (res.ok) {
       const dbSlices = await res.json();
       if (Array.isArray(dbSlices)) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(dbSlices));
-        return dbSlices;
+        const normalized = dbSlices.map(normalizeSlice);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+        return normalized;
       }
     }
   } catch (err) {
@@ -133,23 +149,22 @@ export async function fetchSlicesFromDb() {
 export function loadSlices() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return raw ? JSON.parse(raw).map(normalizeSlice) : [];
   } catch {
     return [];
   }
 }
 
 export function saveSlices(slices) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(slices));
-  if (Array.isArray(slices)) {
-    slices.forEach((s) => {
-      fetch("/api/onos/slices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(s),
-      }).catch(() => {});
-    });
-  }
+  const normalizedSlices = Array.isArray(slices) ? slices.map(normalizeSlice) : [];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedSlices));
+  normalizedSlices.forEach((s) => {
+    fetch("/api/onos/slices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(s),
+    }).catch(() => {});
+  });
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -164,6 +179,7 @@ export async function getSlices() {
   } catch {
     slices = loadSlices();
   }
+  slices = slices.map(normalizeSlice);
 
   const enriched = await Promise.all(
     slices.map(async (slice) => {

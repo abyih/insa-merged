@@ -144,7 +144,8 @@ function generateSystemPrompt(networkContext) {
   }).join("\n");
 
   const existingSliceSummaries = existingSlices.map((s) => {
-    return `Slice "${s.name}" (VLAN ${s.vlanId}): Bandwidth=${s.bandwidth} KB/s, Hosts=[${(s.hosts || []).map((h) => h.ipAddresses?.[0] || h.mac).join(", ")}]`;
+    const bw = s.bandwidth ?? s.bandwidthKbps ?? 10000;
+    return `Slice "${s.name}" (VLAN ${s.vlanId}): Bandwidth=${bw} KB/s, Hosts=[${(s.hosts || []).map((h) => h.ipAddresses?.[0] || h.mac).join(", ")}]`;
   }).join("\n");
 
   return `You are the AI Intent Compiler for an ONOS Software-Defined Network (SDN) Controller with dynamic Network Slicing.

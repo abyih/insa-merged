@@ -31,6 +31,14 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
+function formatRate(kbps) {
+  const rate = Number(kbps);
+  if (!kbps || isNaN(rate) || rate <= 0) return "0 KB/s";
+  if (rate >= 1000000) return (rate / 1000000).toFixed(1) + " GB/s";
+  if (rate >= 1000) return (rate / 1000).toFixed(1) + " MB/s";
+  return rate + " KB/s";
+}
+
 function getHostDisplayName(host) {
   if (!host) return "Host";
   const ips = host.ipAddresses || host.ips || [];
@@ -1005,7 +1013,7 @@ export default function SliceTopology({
                     <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 6, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                       <span style={{ color: "var(--theme-text-muted)" }}>Bandwidth Cap:</span>
                       <span style={{ color: "var(--color-zinc-50)", fontWeight: 700 }}>
-                        {selectedNodeDetails.slice.bandwidth} KB/s
+                        {formatRate(selectedNodeDetails.slice.bandwidth ?? selectedNodeDetails.slice.bandwidthKbps ?? selectedNodeDetails.slice.bandwidth_kbps)}
                       </span>
                     </div>
                   )}

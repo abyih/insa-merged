@@ -71,9 +71,11 @@ function formatBytes(bytes) {
 }
 
 function formatRate(kbps) {
-  if (kbps >= 1000000) return (kbps / 1000000).toFixed(1) + " GB/s";
-  if (kbps >= 1000) return (kbps / 1000).toFixed(1) + " MB/s";
-  return kbps + " KB/s";
+  const rate = Number(kbps);
+  if (!kbps || isNaN(rate) || rate <= 0) return "0 KB/s";
+  if (rate >= 1000000) return (rate / 1000000).toFixed(1) + " GB/s";
+  if (rate >= 1000) return (rate / 1000).toFixed(1) + " MB/s";
+  return rate + " KB/s";
 }
 
 function getHostDisplayName(host) {
@@ -251,7 +253,7 @@ function SliceCard({ slice, onDelete, onEdit, onToggle, isExpanded }) {
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-zinc-50)" }}>{formatRate(slice.bandwidth)}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-zinc-50)" }}>{formatRate(slice.bandwidth ?? slice.bandwidthKbps ?? slice.bandwidth_kbps)}</div>
             <div style={{ fontSize: 10, color: "var(--theme-text-muted)" }}>{hostCount} host{hostCount !== 1 ? "s" : ""}</div>
           </div>
           {onEdit && (
@@ -308,7 +310,7 @@ function SliceCard({ slice, onDelete, onEdit, onToggle, isExpanded }) {
                   { label: "Total Traffic", value: formatBytes(totalBytes) },
                   { label: "Packets", value: totalPackets.toLocaleString() },
                   { label: "VLAN ID", value: slice.vlanId },
-                  { label: "Bandwidth Cap", value: formatRate(slice.bandwidth) },
+                  { label: "Bandwidth Cap", value: formatRate(slice.bandwidth ?? slice.bandwidthKbps ?? slice.bandwidth_kbps) },
                 ].map((s) => (
                   <div key={s.label} style={{
                     background: "var(--theme-bg)", border: "1px solid var(--theme-card-border)",
@@ -459,8 +461,8 @@ function CreateSliceModal({
         setForm({
           name: initialData.name || "",
           description: initialData.description || "",
-          bandwidth: initialData.bandwidth || 5000,
-          burstSize: initialData.burstSize || Math.round((initialData.bandwidth || 5000) * 0.2),
+          bandwidth: initialData.bandwidth ?? initialData.bandwidthKbps ?? initialData.bandwidth_kbps ?? 5000,
+          burstSize: initialData.burstSize ?? initialData.burstKbps ?? initialData.burst_kbps ?? Math.round(((initialData.bandwidth ?? initialData.bandwidthKbps ?? initialData.bandwidth_kbps) || 5000) * 0.2),
           unit: initialData.unit || "KB_PER_SEC",
           color: initialData.color || SLICE_COLORS[0],
           vlanId: initialData.vlanId || "",
@@ -482,7 +484,7 @@ function CreateSliceModal({
   }, [isOpen, initialData]);
 
   const effectiveRemainingCapacity = isEditing
-    ? remainingCapacity + (Number(initialData.bandwidth) || 0)
+    ? remainingCapacity + (Number(initialData.bandwidth ?? initialData.bandwidthKbps ?? initialData.bandwidth_kbps) || 0)
     : remainingCapacity;
   const requestedBandwidth = Number(form.bandwidth) || 0;
   const isOverCapacity = requestedBandwidth > effectiveRemainingCapacity;
@@ -676,7 +678,7 @@ function CreateSliceModal({
             </div>
             {/* Visual allocation bar */}
             <div style={{ height: 6, borderRadius: 3, background: "rgba(255, 255, 255, 0.1)", overflow: "hidden", display: "flex" }}>
-              <div style={{ width: `${Math.min(100, (Math.max(0, totalAllocatedBandwidth - (isEditing ? Number(initialData.bandwidth || 0) : 0)) / totalCapacity) * 100)}%`, background: "#6366f1" }} />
+              <div style={{ width: `${Math.min(100, (Math.max(0, totalAllocatedBandwidth - (isEditing ? Number(initialData.bandwidth ?? initialData.bandwidthKbps ?? 0) : 0)) / totalCapacity) * 100)}%`, background: "#6366f1" }} />
               <div style={{ width: `${Math.min(100, (requestedBandwidth / totalCapacity) * 100)}%`, background: isOverCapacity ? "#ef4444" : form.color }} />
             </div>
             {isOverCapacity && (
@@ -949,7 +951,7 @@ export default function NetworkSlicing() {
     try {
       if (editingSlice) {
         const updated = await updateSlice(editingSlice.id, config);
-        showMessage(`Slice "${updated.name}" updated — ${updated.hosts.length} host(s) assigned, ${formatRate(updated.bandwidth)} cap`, "success");
+        showMessage(`Slice "${updated.name}" updated — ${updated.hosts?.length || 0} host(s) assigned, ${formatRate(updated.bandwidth ?? updated.bandwidthKbps)} cap`, "success");
         setEditingSlice(null);
       } else {
         const newSlice = await createSlice(config);
@@ -983,7 +985,7 @@ export default function NetworkSlicing() {
   // Computed
   const totalCapacity = useMemo(() => getNetworkCapacity(), []);
   const totalHosts = useMemo(() => slices.reduce((sum, s) => sum + (s.hosts?.length || 0), 0), [slices]);
-  const totalBandwidth = useMemo(() => slices.reduce((sum, s) => sum + (s.bandwidth || 0), 0), [slices]);
+  const totalBandwidth = useMemo(() => slices.reduce((sum, s) => sum + (Number(s.bandwidth ?? s.bandwidthKbps ?? s.bandwidth_kbps) || 0), 0), [slices]);
   const remainingCapacity = useMemo(() => Math.max(0, totalCapacity - totalBandwidth), [totalCapacity, totalBandwidth]);
   const allocatedPercent = useMemo(() => Math.min(100, Math.round((totalBandwidth / totalCapacity) * 100)), [totalBandwidth, totalCapacity]);
 
@@ -993,7 +995,7 @@ export default function NetworkSlicing() {
   })), [slices]);
   const barData = useMemo(() => slices.map((s) => ({
     name: s.name.length > 14 ? s.name.slice(0, 14) + "…" : s.name,
-    bandwidth: s.bandwidth, fill: s.color,
+    bandwidth: Number(s.bandwidth ?? s.bandwidthKbps ?? s.bandwidth_kbps) || 0, fill: s.color,
   })), [slices]);
 
   const { burstViolations, setIsDrawerOpen } = useNotifications();
@@ -1133,11 +1135,12 @@ export default function NetworkSlicing() {
         {/* Multi-segment progress bar */}
         <div style={{ height: 10, borderRadius: 5, background: "rgba(255, 255, 255, 0.08)", overflow: "hidden", display: "flex", gap: 2 }}>
           {slices.map((s) => {
-            const pct = (s.bandwidth / totalCapacity) * 100;
+            const sliceBw = Number(s.bandwidth ?? s.bandwidthKbps ?? s.bandwidth_kbps) || 0;
+            const pct = (sliceBw / totalCapacity) * 100;
             return (
               <div
                 key={s.id}
-                title={`${s.name}: ${formatRate(s.bandwidth)} (${pct.toFixed(1)}%)`}
+                title={`${s.name}: ${formatRate(sliceBw)} (${pct.toFixed(1)}%)`}
                 style={{ width: `${pct}%`, background: s.color, transition: "width 0.3s ease" }}
               />
             );
