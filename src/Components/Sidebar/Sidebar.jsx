@@ -11,6 +11,7 @@ const links = [
 	{ title: "Anomaly Detector", link: "/anomaly" },
 	{ title: "Cloud", link: "/cloud" },
 	{ title: "ONOS Slicing", link: "/network-slicing" },
+	{ title: "Slicing Verification", link: "/slicing-verification" },
 	{ title: "OpenStack Slices", link: "/slices" },
 	{ title: "VM Topology Map", link: "/vm-topology" },
 	{ title: "Stats", link: "/stats" },

@@ -16,6 +16,7 @@ import Stats from "./Pages/Stats";
 import AnomalyDetector from "./Pages/AnomalyDetector/AnomalyDetector";
 import Cloud from "./Pages/Cloud";
 import NetworkSlicing from "./Pages/NetworkSlicing";
+import SlicingVerification from "./Pages/SlicingVerification";
 import NetworkSlices from "./Pages/NetworkSlices";
 import VmTopologyMap from "./Pages/VmTopologyMap";
 import PathTrace from "./Pages/PathTrace/PathTrace";
@@ -213,6 +214,7 @@ const App = () => (
             <Route path="/topology"            element={<TopologyRoute />} />
             <Route path="/cloud"               element={<Cloud />} />
             <Route path="/network-slicing"     element={<NetworkSlicing />} />
+            <Route path="/slicing-verification" element={<SlicingVerification />} />
             <Route path="/slices"              element={<NetworkSlices />} />
             <Route path="/vm-topology"         element={<VmTopologyMap />} />
             <Route path="/path-trace"          element={<PathTrace />} />

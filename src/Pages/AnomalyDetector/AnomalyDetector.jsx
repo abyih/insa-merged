@@ -9,6 +9,7 @@ import {
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
+  CheckCircle2,
   AlertTriangle,
   Copy,
   Check,
@@ -76,6 +77,8 @@ const ATTACK_TYPES = {
   NORMAL: { name: "Normal", icon: "✓", color: "#16a34a", bg: "rgba(34,197,94,0.12)", border: "rgba(34,197,94,0.3)", pulseClass: "" },
   ATTACK: { name: "Attack Anomaly", icon: "⚠", color: "#dc2626", bg: "rgba(239,68,68,0.14)", border: "rgba(239,68,68,0.4)", pulseClass: "animate-pulse-red" },
   SUSPICIOUS: { name: "Suspicious Flow", icon: "⚠", color: "#d97706", bg: "rgba(217,119,6,0.14)", border: "rgba(217,119,6,0.4)", pulseClass: "animate-pulse-amber" },
+  BASELINE: { name: "Baseline Calibration", icon: "📊", color: "#0284c7", bg: "rgba(2,132,199,0.14)", border: "rgba(2,132,199,0.4)", pulseClass: "animate-pulse" },
+  TRAINED: { name: "Normal Baseline", icon: "✓", color: "#16a34a", bg: "rgba(34,197,94,0.12)", border: "rgba(34,197,94,0.3)", pulseClass: "" },
 };
 
 const THREAT_CONFIG = {
@@ -86,6 +89,14 @@ const THREAT_CONFIG = {
     glow: "0 0 35px rgba(34,197,94,0.12)",
     icon: ShieldCheck,
     label: "All Clear",
+  },
+  BASELINE: {
+    color: "#0284c7",
+    bg: "rgba(2,132,199,0.06)",
+    border: "rgba(2,132,199,0.25)",
+    glow: "0 0 35px rgba(2,132,199,0.15)",
+    icon: Activity,
+    label: "Calibrating",
   },
   LOW: {
     color: "#d97706",
@@ -143,6 +154,20 @@ const STATE_BADGES = {
     dot: "#22c55e",
     label: "NORMAL",
   },
+  BASELINE: {
+    bg: "rgba(2,132,199,0.14)",
+    color: "#38bdf8",
+    border: "rgba(2,132,199,0.35)",
+    dot: "#38bdf8",
+    label: "BASELINE",
+  },
+  TRAINED: {
+    bg: "rgba(16,185,129,0.14)",
+    color: "#34d399",
+    border: "rgba(16,185,129,0.35)",
+    dot: "#34d399",
+    label: "TRAINED",
+  },
 };
 
 const CATEGORY_META = {
@@ -153,6 +178,7 @@ const CATEGORY_META = {
   Brute_Force: { icon: "🔑", label: "Brute Force", color: "#ca8a04", bg: "rgba(234,179,8,0.12)", border: "rgba(234,179,8,0.3)" },
   Botnet: { icon: "🤖", label: "Botnet", color: "#9333ea", bg: "rgba(168,85,247,0.12)", border: "rgba(168,85,247,0.3)" },
   Normal: { icon: "🟢", label: "Normal", color: "#16a34a", bg: "rgba(34,197,94,0.12)", border: "rgba(34,197,94,0.3)" },
+  "Calibrating Baseline": { icon: "📊", label: "Calibrating Baseline", color: "#38bdf8", bg: "rgba(2,132,199,0.12)", border: "rgba(2,132,199,0.3)" },
 };
 
 /* Resilient formatting helper: always renders number, never blanks */
@@ -497,9 +523,22 @@ export default function AnomalyDetector() {
   const [connected, setConnected] = useState({ ONLINE: null, OFFLINE: null });
   const [lastPollTime, setLastPollTime] = useState(null);
 
-  // Online IF state (Port 5001)
+  // Online IF state (Port 5003)
   const [results, setResults] = useState({});
   const [lastFeatures, setLastFeatures] = useState(null);
+  const [baselineNotification, setBaselineNotification] = useState(null);
+  const [baselineFinishedAt, setBaselineFinishedAt] = useState(null);
+  const [baselineTargetSamples, setBaselineTargetSamples] = useState(100);
+  const prevIsBaselineRef = useRef(null);
+
+  // Auto-dismiss baseline notification after 10 seconds
+  useEffect(() => {
+    if (!baselineNotification) return;
+    const timer = setTimeout(() => {
+      setBaselineNotification(null);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [baselineNotification]);
 
   // Offline RF state (Port 5002)
   const [rfResults, setRfResults] = useState({});
@@ -608,92 +647,142 @@ export default function AnomalyDetector() {
     };
   }, []);
 
-  // ── Online IF State Polling ─────────────────────────────────────────────────
+  // ── Online IF State Polling & Baseline Accumulation ────────────────────────
   const fetchState = useCallback(async () => {
+    let rawOdl = null;
     try {
-      let res = await fetch(`${SERVER_URLS.ONLINE}/state`);
-      if (!res.ok) {
-        res = await fetch(`${SERVER_URLS.ONLINE}/analyze`);
-      }
-      if (!res.ok) {
-        setConnected((p) => ({ ...p, ONLINE: false }));
-        return;
-      }
-      const data = await res.json();
-      setConnected((p) => ({ ...p, ONLINE: true }));
+      rawOdl = await getNodes();
+    } catch (err) {
+      console.warn("[fetchState] getNodes failed:", err);
+    }
 
-      // Handle alerts
-      const alerts = data.alerts ?? [];
-      if (alerts.length > 0) {
-        alerts.forEach((a) => {
-          if (Notification.permission === "granted") {
-            new Notification("DDoS Attack Detected", {
-              body: `${a.switch_id} — Confidence ${(a.rf_prob * 100).toFixed(0)}%`,
-              requireInteraction: true,
-            });
+    const nodes = rawOdl?.["opendaylight-inventory:nodes"]?.node ?? [];
+    const ids = nodes
+      .map((n) => n.id)
+      .filter((id) => id && !id.startsWith("host:") && !id.includes(":LOCAL") && !/openflow:\d+:\d+$/.test(id));
+    const targets = ids.length > 0 ? ids : ["global"];
+
+    const onlineResultsLocal = {};
+    let atLeastOneSuccess = false;
+
+    // Send detect to Online IF engine for each active switch
+    if (rawOdl && targets.length > 0) {
+      for (const sid of targets) {
+        try {
+          const res = await fetch(`${SERVER_URLS.ONLINE}/detect`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ switch_id: sid, raw_odl: rawOdl }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            onlineResultsLocal[sid] = {
+              ...data,
+              switch_id: data.switch_id || sid,
+              src: sid,
+            };
+            atLeastOneSuccess = true;
           }
-        });
-        fetch(`${SERVER_URLS.ONLINE}/alerts/clear`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: alerts.map((a) => a.id) }),
-        }).catch(() => {});
+        } catch (err) {
+          console.warn(`[fetchState] /detect failed for ${sid}:`, err);
+        }
       }
+    }
 
-      const backendResults = data.results ?? {};
-      setResults(backendResults);
-
-      const allEntries = Object.values(backendResults).filter((r) => r.phase !== "SKIP");
-      const worstEntry = allEntries
-        .filter((r) => r.features)
-        .reduce((a, b) => {
-          if (!a) return b;
-          const aSev = a.state === "ATTACK" ? 3 : a.state === "SUSPICIOUS" ? 2 : a.state === "NORMAL" ? 1 : 0;
-          const bSev = b.state === "ATTACK" ? 3 : b.state === "SUSPICIOUS" ? 2 : b.state === "NORMAL" ? 1 : 0;
-          return bSev > aSev ? b : a;
-        }, null);
-
-      if (worstEntry?.features) {
-        setLastFeatures(worstEntry.features);
+    // Also fetch /state for coordinator summary & alerts
+    let stateData = null;
+    try {
+      let stateRes = await fetch(`${SERVER_URLS.ONLINE}/state`);
+      if (!stateRes.ok) {
+        stateRes = await fetch(`${SERVER_URLS.ONLINE}/analyze`);
       }
-
-      const nowTs = new Date().toLocaleTimeString();
-      const entries = allEntries.map((r, idx) => ({
-        id: Date.now() + idx,
-        switch_id: r.switch_id,
-        switch: r.switch_id,
-        state: r.state,
-        phase: r.phase,
-        attack_type: r.state === "ATTACK" ? "DDoS" : "Normal",
-        attack_prob: r.percentile != null ? (100 - r.percentile) / 100 : r.raw_score != null ? Math.min(1, Math.max(0, r.raw_score)) : 0,
-        raw_score: r.raw_score,
-        soft_anomaly: r.soft_anomaly,
-        hard_anomaly: r.hard_anomaly,
-        percentile: r.percentile,
-        network_severity: r.network_severity,
-        src_ip: r.attacking_host?.ip || "—",
-        dst_ip: "10.0.0.1",
-        protocol: "TCP",
-        _ts: nowTs,
-        _mode: "ONLINE",
-      }));
-
-      if (entries.length > 0) {
-        setLog((prev) => [...entries, ...prev].slice(0, 100));
+      if (stateRes.ok) {
+        stateData = await stateRes.json();
+        atLeastOneSuccess = true;
+        if (stateData.baseline_samples) {
+          setBaselineTargetSamples(stateData.baseline_samples);
+        }
       }
+    } catch {}
 
-      // Auto-block reflection
-      const autoBlocks = data.auto_blocks ?? {};
-      const newAutoBlocked = Object.entries(autoBlocks)
-        .filter(([, blocked]) => blocked)
-        .map(([sid]) => sid);
-
-      if (newAutoBlocked.length > 0) {
-        setAutoBlockedSwitches(new Set(newAutoBlocked));
-        setBlockedSwitches((prev) => new Set([...prev, ...newAutoBlocked]));
-      }
-    } catch {
+    if (!atLeastOneSuccess) {
       setConnected((p) => ({ ...p, ONLINE: false }));
+      return;
+    }
+    setConnected((p) => ({ ...p, ONLINE: true }));
+
+    // Handle alerts
+    const alerts = stateData?.alerts ?? [];
+    if (alerts.length > 0) {
+      alerts.forEach((a) => {
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          new Notification("DDoS Attack Detected", {
+            body: `${a.switch_id} — Confidence ${(a.rf_prob * 100).toFixed(0)}%`,
+            requireInteraction: true,
+          });
+        }
+      });
+      fetch(`${SERVER_URLS.ONLINE}/alerts/clear`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: alerts.map((a) => a.id) }),
+      }).catch(() => {});
+    }
+
+    const backendResults = {
+      ...(stateData?.results ?? {}),
+      ...onlineResultsLocal,
+    };
+    setResults(backendResults);
+
+    const allEntries = Object.values(backendResults).filter((r) => r.phase !== "SKIP");
+    const worstEntry = allEntries
+      .filter((r) => r.features)
+      .reduce((a, b) => {
+        if (!a) return b;
+        const aSev = a.state === "ATTACK" ? 3 : a.state === "SUSPICIOUS" ? 2 : a.state === "NORMAL" ? 1 : 0;
+        const bSev = b.state === "ATTACK" ? 3 : b.state === "SUSPICIOUS" ? 2 : b.state === "NORMAL" ? 1 : 0;
+        return bSev > aSev ? b : a;
+      }, null);
+
+    if (worstEntry?.features) {
+      setLastFeatures(worstEntry.features);
+    }
+
+    const nowTs = new Date().toLocaleTimeString();
+    const entries = allEntries.map((r, idx) => ({
+      id: Date.now() + idx,
+      switch_id: r.switch_id,
+      switch: r.switch_id,
+      state: r.phase === "BASELINE" ? "BASELINE" : r.state || "NORMAL",
+      phase: r.phase,
+      attack_type: r.phase === "BASELINE" ? "Calibrating Baseline" : r.state === "ATTACK" ? "DDoS" : "Normal",
+      attack_prob: r.percentile != null ? (100 - r.percentile) / 100 : r.raw_score != null ? Math.min(1, Math.max(0, r.raw_score)) : 0,
+      raw_score: r.raw_score,
+      soft_anomaly: r.soft_anomaly,
+      hard_anomaly: r.hard_anomaly,
+      percentile: r.percentile,
+      network_severity: r.network_severity,
+      src_ip: r.attacking_host?.ip || "—",
+      dst_ip: "10.0.0.1",
+      protocol: "TCP",
+      _ts: nowTs,
+      _mode: "ONLINE",
+    }));
+
+    if (entries.length > 0) {
+      setLog((prev) => [...entries, ...prev].slice(0, 100));
+    }
+
+    // Auto-block reflection
+    const autoBlocks = stateData?.auto_blocks ?? {};
+    const newAutoBlocked = Object.entries(autoBlocks)
+      .filter(([, blocked]) => blocked)
+      .map(([sid]) => sid);
+
+    if (newAutoBlocked.length > 0) {
+      setAutoBlockedSwitches(new Set(newAutoBlocked));
+      setBlockedSwitches((prev) => new Set([...prev, ...newAutoBlocked]));
     }
   }, []);
 
@@ -915,10 +1004,47 @@ export default function AnomalyDetector() {
     setAutoBlockedSwitches(new Set());
     setMitigationLog([]);
     setAutoBlockLog([]);
+    setBaselineFinishedAt(null);
+    setBaselineNotification({
+      type: "info",
+      title: "State Reset",
+      message: "Telemetry and baseline detectors reset.",
+      ts: Date.now(),
+    });
     prevFlowStatsRef.current = {};
     checkHealth();
     setRunning(true);
   };
+
+  // ── Calibrate Baseline Trigger ─────────────────────────────────────────────
+  const handleCalibrateBaseline = useCallback(async (samples = 100) => {
+    try {
+      setBaselineFinishedAt(null);
+      setBaselineNotification({
+        type: "info",
+        title: "Calibrating Online IF Baseline",
+        message: `Resetting previous baseline. Querying OpenDaylight to collect ${samples} normal flow samples...`,
+        ts: Date.now(),
+      });
+      await fetch(`${SERVER_URLS.ONLINE}/reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ samples }),
+      });
+      setBaselineTargetSamples(samples);
+      setResults({});
+      if (!running) setRunning(true);
+      await fetchState();
+    } catch (err) {
+      console.error("Baseline calibration trigger failed:", err);
+      setBaselineNotification({
+        type: "error",
+        title: "Calibration Request Failed",
+        message: `Could not contact Online IF engine at ${SERVER_URLS.ONLINE}. Check service status.`,
+        ts: Date.now(),
+      });
+    }
+  }, [running, fetchState]);
 
   // ── Derived State & Classifications ────────────────────────────────────────
   const allIFResults = Object.values(results);
@@ -1113,14 +1239,44 @@ export default function AnomalyDetector() {
     }
   }, []);
 
-  // ── Baseline Training Progress ─────────────────────────────────────────────
-  const isBaseline = allIFResults.length > 0 && allIFResults.every((r) => r.phase === "BASELINE");
-  const bCollected = worstIFResult?.collected || 0;
-  const bTotal = bCollected + (worstIFResult?.remaining || 100);
-  const bPct = Math.min(100, (bCollected / bTotal) * 100);
+  // ── Baseline Training Progress & Completion Status ───────────────────────────
+  const isBaseline = allIFResults.length > 0 && allIFResults.some((r) => r.phase === "BASELINE" || (!r.model_trained && r.phase !== "SKIP"));
+  const isBaselineFinished = allIFResults.length > 0 && allIFResults.every((r) => r.model_trained || r.phase === "TRAINED" || r.phase === "DETECTION" || r.phase === "LIVE");
+  const baselineState = worstIFResult?.baseline_state || (isBaselineFinished ? "CLEAN" : "COLLECTING");
+  const bCollected = Math.max(...allIFResults.map((r) => r.collected || 0), worstIFResult?.collected || 0);
+  const bTotal = worstIFResult?.baseline_samples || baselineTargetSamples || (worstIFResult?.remaining != null ? bCollected + worstIFResult.remaining : 100);
+  const bPct = Math.min(100, Math.round((bCollected / (bTotal || 100)) * 100));
+  const isBaselineContaminated = allIFResults.some((r) => r.baseline_state === "CONTAMINATED" || r.reason?.includes("Contaminated"));
+
+  // Track Baseline Completion Transition
+  useEffect(() => {
+    if (prevIsBaselineRef.current === true && isBaselineFinished && !isBaseline) {
+      const ts = new Date().toLocaleTimeString();
+      setBaselineFinishedAt(ts);
+      setBaselineNotification({
+        type: "success",
+        title: "Baseline Training Completed!",
+        message: `Online Isolation Forest successfully profiled normal network behavior across ${bTotal} flow samples. Model is trained (${baselineState}) and live anomaly detection is now ACTIVE.`,
+        ts: Date.now(),
+      });
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("Online IF Baseline Established", {
+          body: `Learned normal flow baseline (${bTotal} samples, ${baselineState}). Live anomaly detection active.`,
+        });
+      }
+    }
+    if (isBaseline) {
+      prevIsBaselineRef.current = true;
+    } else if (isBaselineFinished) {
+      prevIsBaselineRef.current = false;
+    }
+  }, [isBaseline, isBaselineFinished, bTotal, baselineState]);
 
   // Status mapping for Threat Matrix
   const getUIStateKey = () => {
+    if (isBaseline) {
+      return "BASELINE";
+    }
     if (mode === "ONLINE") {
       return worstIFResult?.state ?? "NORMAL";
     } else if (mode === "OFFLINE") {
@@ -1142,7 +1298,7 @@ export default function AnomalyDetector() {
   const hybridScore = Math.min(1.0, 0.4 * latestIFScore + 0.6 * latestRFProb);
   const isModelConsensus = (latestIFScore >= 0.35 && latestRFProb >= 0.4) || (latestIFScore < 0.35 && latestRFProb < 0.4);
 
-  const threatLevel = isAttack ? "CRITICAL" : isSuspicious ? "HIGH" : hybridScore >= 0.3 ? "MEDIUM" : "NONE";
+  const threatLevel = isBaseline ? "BASELINE" : isAttack ? "CRITICAL" : isSuspicious ? "HIGH" : hybridScore >= 0.3 ? "MEDIUM" : "NONE";
   const tc = THREAT_CONFIG[threatLevel] || THREAT_CONFIG.NONE;
 
   // ── Table Filtering & Monotonic Sorting ────────────────────────────────────
@@ -1459,6 +1615,31 @@ export default function AnomalyDetector() {
             {running ? "Pause Telemetry" : "Run Continuous"}
           </button>
 
+          {/* Calibrate Baseline Button (for Online & Hybrid modes) */}
+          {(mode === "ONLINE" || mode === "HYBRID") && (
+            <button
+              onClick={() => handleCalibrateBaseline(100)}
+              className="btn-reactive"
+              title="Reset and recalibrate normal flow baseline from OpenDaylight (100 samples)"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "7px 14px",
+                borderRadius: 10,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                background: isBaseline ? "rgba(2,132,199,0.22)" : "rgba(14,165,233,0.12)",
+                border: "1px solid rgba(14,165,233,0.35)",
+                color: "#38bdf8",
+              }}
+            >
+              <Activity size={14} className={isBaseline ? "animate-spin" : ""} />
+              {isBaseline ? `Calibrating (${bPct}%)` : isBaselineFinished ? "Re-Calibrate Baseline" : "Calibrate Baseline"}
+            </button>
+          )}
+
           {/* Query Once Button */}
           <button
             onClick={handleRefresh}
@@ -1711,16 +1892,269 @@ export default function AnomalyDetector() {
           </div>
         )}
 
-        {/* Baseline Training Progress Bar */}
-        {isBaseline && (
-          <div style={{ marginTop: 18, borderTop: "1px solid var(--theme-card-border, #27272a)", paddingTop: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: "#38bdf8", marginBottom: 6 }}>
-              <span>Collecting Baseline Flow Signatures…</span>
-              <span>{bCollected} / {bTotal} Samples ({bPct.toFixed(0)}%)</span>
-            </div>
-            <div style={{ height: 8, background: "var(--theme-bg, #09090b)", borderRadius: 4, overflow: "hidden", border: "1px solid rgba(2,132,199,0.3)" }}>
-              <div style={{ height: "100%", borderRadius: 4, background: "linear-gradient(90deg, #0284c7, #38bdf8)", width: `${bPct}%`, transition: "width 0.4s ease" }} />
-            </div>
+        {/* ── Online IF Baseline Status & Telemetry Module ── */}
+        {(mode === "ONLINE" || mode === "HYBRID") && (
+          <div
+            style={{
+              marginTop: 20,
+              borderTop: "1px solid var(--theme-card-border, #27272a)",
+              paddingTop: 18,
+            }}
+          >
+            {isBaseline ? (
+              /* State 1: Actively Creating Baseline */
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderRadius: 14,
+                  background: "rgba(2, 132, 199, 0.08)",
+                  border: "1px solid rgba(56, 189, 248, 0.35)",
+                  boxShadow: "0 0 25px rgba(2, 132, 199, 0.12)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#38bdf8", boxShadow: "0 0 10px #38bdf8", animation: "pulse 1.5s infinite" }} />
+                    <span style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#38bdf8" }}>
+                      Creating Normal Baseline (Profiling Network)
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "2px 8px",
+                        borderRadius: 9999,
+                        background: "rgba(56, 189, 248, 0.2)",
+                        color: "#bae6fd",
+                        border: "1px solid rgba(56, 189, 248, 0.3)",
+                      }}
+                    >
+                      CALIBRATION IN PROGRESS
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "#38bdf8", fontFamily: "monospace" }}>
+                      {bCollected} / {bTotal} Samples ({bPct}%)
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)" }}>
+                      ~{Math.max(0, Math.ceil(((bTotal - bCollected) * POLL_MS) / 1000))}s remaining
+                    </span>
+                  </div>
+                </div>
+
+                {/* Animated Gradient Progress Bar */}
+                <div style={{ height: 10, background: "var(--theme-bg, #09090b)", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(2, 132, 199, 0.35)", marginBottom: 14 }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      borderRadius: 6,
+                      background: "linear-gradient(90deg, #0284c7, #38bdf8, #818cf8)",
+                      width: `${bPct}%`,
+                      transition: "width 0.4s ease",
+                      boxShadow: "0 0 12px rgba(56, 189, 248, 0.6)",
+                    }}
+                  />
+                </div>
+
+                {/* Diagnostics and Per-Switch Status */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, fontSize: 11 }}>
+                  <div style={{ background: "rgba(0,0,0,0.25)", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ color: "var(--theme-text-muted, #71717a)", fontWeight: 700, textTransform: "uppercase" }}>Flow Sampling:</span>
+                    <p style={{ margin: "4px 0 0", color: "#e2e8f0", lineHeight: 1.4 }}>
+                      Querying OpenDaylight flow metrics (bytes/sec, packet rates, asymmetry) to model normal baseline distribution.
+                    </p>
+                  </div>
+                  <div style={{ background: "rgba(0,0,0,0.25)", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ color: "var(--theme-text-muted, #71717a)", fontWeight: 700, textTransform: "uppercase" }}>Stationarity & Drift Test:</span>
+                    <p style={{ margin: "4px 0 0", color: "#e2e8f0", lineHeight: 1.4 }}>
+                      Validating normalized L2 drift between first 50 and last 50 samples (Threshold: ≤ 1.0).
+                    </p>
+                  </div>
+                  <div style={{ background: "rgba(0,0,0,0.25)", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ color: "var(--theme-text-muted, #71717a)", fontWeight: 700, textTransform: "uppercase" }}>Active Switch Targets:</span>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                      {allIFResults.length > 0 ? (
+                        allIFResults.map((r) => (
+                          <span
+                            key={r.switch_id}
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: 6,
+                              background: "rgba(2, 132, 199, 0.25)",
+                              border: "1px solid rgba(56, 189, 248, 0.4)",
+                              color: "#bae6fd",
+                              fontWeight: 700,
+                              fontSize: 10,
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            {r.switch_id}: {r.collected || 0}/{bTotal}
+                          </span>
+                        ))
+                      ) : (
+                        <span style={{ color: "#94a3b8" }}>Waiting for initial poll delta...</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {isBaselineContaminated && (
+                  <div style={{ marginTop: 12, padding: "8px 14px", borderRadius: 8, background: "rgba(245, 158, 11, 0.15)", border: "1px solid rgba(245, 158, 11, 0.35)", color: "#fbbf24", fontSize: 11, display: "flex", alignItems: "center", gap: 8 }}>
+                    <AlertTriangle size={14} />
+                    <span>Traffic drift detected during calibration (drift &gt; 1.0). Baseline collection automatically restarted for data purity.</span>
+                  </div>
+                )}
+              </div>
+            ) : isBaselineFinished ? (
+              /* State 2: Baseline Finished & Model Trained */
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderRadius: 14,
+                  background: "rgba(16, 185, 129, 0.08)",
+                  border: "1px solid rgba(34, 197, 94, 0.35)",
+                  boxShadow: "0 0 25px rgba(16, 185, 129, 0.12)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <CheckCircle2 size={18} style={{ color: "#22c55e" }} />
+                    <span style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#22c55e" }}>
+                      Normal Baseline Established & Model Trained
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "2px 8px",
+                        borderRadius: 9999,
+                        background: "rgba(34, 197, 94, 0.2)",
+                        color: "#86efac",
+                        border: "1px solid rgba(34, 197, 94, 0.3)",
+                      }}
+                    >
+                      LIVE DETECTION ACTIVE
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {baselineFinishedAt && (
+                      <span style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)", fontFamily: "monospace" }}>
+                        Learned at: {baselineFinishedAt}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleCalibrateBaseline(100)}
+                      className="btn-reactive"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "5px 12px",
+                        borderRadius: 8,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        background: "rgba(34, 197, 94, 0.15)",
+                        border: "1px solid rgba(34, 197, 94, 0.35)",
+                        color: "#86efac",
+                      }}
+                    >
+                      <RefreshCw size={12} /> Re-Calibrate Baseline
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4-Box Metrics Grid */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, fontSize: 11 }}>
+                  <div style={{ background: "rgba(0,0,0,0.25)", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ color: "var(--theme-text-muted, #71717a)", fontWeight: 700, textTransform: "uppercase" }}>Baseline Purity:</span>
+                    <p style={{ margin: "4px 0 0", fontSize: 13, fontWeight: 800, color: baselineState === "DEGRADED" ? "#f59e0b" : "#22c55e" }}>
+                      {baselineState === "DEGRADED" ? "DEGRADED (Contamination 15%)" : "CLEAN (Stationary, Drift ≤ 1.0)"}
+                    </p>
+                  </div>
+                  <div style={{ background: "rgba(0,0,0,0.25)", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ color: "var(--theme-text-muted, #71717a)", fontWeight: 700, textTransform: "uppercase" }}>Trained Flow Signatures:</span>
+                    <p style={{ margin: "4px 0 0", fontSize: 13, fontWeight: 800, color: "#fafafa", fontFamily: "monospace" }}>
+                      {bTotal} / {bTotal} Samples Committed
+                    </p>
+                  </div>
+                  <div style={{ background: "rgba(0,0,0,0.25)", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ color: "var(--theme-text-muted, #71717a)", fontWeight: 700, textTransform: "uppercase" }}>Isolation Forest:</span>
+                    <p style={{ margin: "4px 0 0", fontSize: 13, fontWeight: 800, color: "#38bdf8" }}>
+                      100 Trees Fitted (Unsupervised)
+                    </p>
+                  </div>
+                  <div style={{ background: "rgba(0,0,0,0.25)", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ color: "var(--theme-text-muted, #71717a)", fontWeight: 700, textTransform: "uppercase" }}>Threshold Percentiles:</span>
+                    <p style={{ margin: "4px 0 0", fontSize: 13, fontWeight: 800, color: "#a78bfa" }}>
+                      Soft: 1.0% | Hard: 0.1%
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* State 3: Standby / Initial State */
+              <div
+                style={{
+                  padding: "14px 18px",
+                  borderRadius: 12,
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid var(--theme-card-border, #27272a)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 12,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Info size={16} style={{ color: "#38bdf8" }} />
+                  <div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--theme-fg, #fafafa)" }}>
+                      Online Isolation Forest Baseline Standby
+                    </span>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--theme-text-muted, #71717a)" }}>
+                      Click Calibrate Baseline to query OpenDaylight flow tables and train the normal unsupervised state.
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => handleCalibrateBaseline(20)}
+                    className="btn-reactive"
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      background: "rgba(168, 85, 247, 0.14)",
+                      border: "1px solid rgba(168, 85, 247, 0.35)",
+                      color: "#c084fc",
+                    }}
+                  >
+                    ⚡ Quick Calibrate (20 Samples)
+                  </button>
+                  <button
+                    onClick={() => handleCalibrateBaseline(100)}
+                    className="btn-reactive"
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 8,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      background: "#0284c7",
+                      border: "none",
+                      color: "#fff",
+                    }}
+                  >
+                    Calibrate Baseline (100 Samples)
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2510,6 +2944,86 @@ export default function AnomalyDetector() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* ── Toast Notification for Baseline Feedback ────────────────────────── */}
+      {baselineNotification && (
+        <div
+          style={{
+            position: "fixed",
+            top: 24,
+            right: 24,
+            zIndex: 9999,
+            maxWidth: 420,
+            background:
+              baselineNotification.type === "success"
+                ? "rgba(6, 78, 59, 0.95)"
+                : baselineNotification.type === "error"
+                ? "rgba(127, 29, 29, 0.95)"
+                : "rgba(15, 23, 42, 0.95)",
+            border: `1px solid ${
+              baselineNotification.type === "success"
+                ? "rgba(34, 197, 94, 0.5)"
+                : baselineNotification.type === "error"
+                ? "rgba(239, 68, 68, 0.5)"
+                : "rgba(56, 189, 248, 0.5)"
+            }`,
+            backdropFilter: "blur(12px)",
+            color: "#fff",
+            padding: "16px 20px",
+            borderRadius: 14,
+            boxShadow: "0 14px 40px rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+            animation: "slideInDown 0.3s ease",
+          }}
+        >
+          <div style={{ marginTop: 2, flexShrink: 0 }}>
+            {baselineNotification.type === "success" ? (
+              <CheckCircle2 size={20} style={{ color: "#22c55e" }} />
+            ) : baselineNotification.type === "error" ? (
+              <AlertTriangle size={20} style={{ color: "#ef4444" }} />
+            ) : (
+              <Info size={20} style={{ color: "#38bdf8" }} />
+            )}
+          </div>
+          <div style={{ flex: 1 }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 13,
+                fontWeight: 800,
+                color:
+                  baselineNotification.type === "success"
+                    ? "#4ade80"
+                    : baselineNotification.type === "error"
+                    ? "#f87171"
+                    : "#38bdf8",
+              }}
+            >
+              {baselineNotification.title}
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "#cbd5e1", lineHeight: 1.45 }}>
+              {baselineNotification.message}
+            </p>
+          </div>
+          <button
+            onClick={() => setBaselineNotification(null)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#94a3b8",
+              cursor: "pointer",
+              padding: 2,
+              display: "flex",
+              alignItems: "center",
+            }}
+            title="Dismiss"
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
 

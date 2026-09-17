@@ -50,6 +50,18 @@ export default defineConfig(({ mode }) => {
           timeout: 10000,
           proxyTimeout: 10000,
         },
+        "/api/onos/qos": {
+          target: "http://127.0.0.1:5001",
+          changeOrigin: true,
+          timeout: 10000,
+          proxyTimeout: 10000,
+        },
+        "/api/onos/summary": {
+          target: "http://127.0.0.1:5001",
+          changeOrigin: true,
+          timeout: 10000,
+          proxyTimeout: 10000,
+        },
         // Dedicated ONOS & Mininet QoS backend (server-onos.js on port 5001)
         "/api/onos-service": {
           target: "http://127.0.0.1:5001",

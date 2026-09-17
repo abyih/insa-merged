@@ -90,7 +90,10 @@ class SwitchDetector:
                 if not full:
                     return self._resp_with_rf("BASELINE", fv, raw_odl,
                                       collected=self._baseline.count,
-                                      remaining=CFG.baseline_samples - self._baseline.count)
+                                      remaining=max(0, CFG.baseline_samples - self._baseline.count),
+                                      baseline_samples=CFG.baseline_samples,
+                                      baseline_state=self._baseline.state.name,
+                                      model_trained=False)
 
                 # Baseline full → validate
                 bl_state = self._baseline.validate()
@@ -100,6 +103,9 @@ class SwitchDetector:
                     return self._resp_with_rf("BASELINE", fv, raw_odl,
                                       collected=0,
                                       remaining=CFG.baseline_samples,
+                                      baseline_samples=CFG.baseline_samples,
+                                      baseline_state="CONTAMINATED",
+                                      model_trained=False,
                                       reason="Contaminated baseline — restarting.")
 
                 # CLEAN or DEGRADED → train
@@ -113,6 +119,10 @@ class SwitchDetector:
                 coordinator.get_or_create(self.switch_id)
                 return self._resp_with_rf("TRAINED", fv, raw_odl,
                                   baseline_state=bl_state.name,
+                                  collected=CFG.baseline_samples,
+                                  remaining=0,
+                                  baseline_samples=CFG.baseline_samples,
+                                  model_trained=True,
                                   reason="Model trained. Detection active.")
 
             # ── Detection phase ───────────────────────────────────────────────
@@ -137,6 +147,10 @@ class SwitchDetector:
                 soft_threshold=scoring["soft_threshold"],
                 hard_threshold=scoring["hard_threshold"],
                 baseline_state=scoring["baseline_state"],
+                model_trained=True,
+                collected=CFG.baseline_samples,
+                remaining=0,
+                baseline_samples=CFG.baseline_samples,
                 is_injected=fv.is_injected,
                 true_label=fv.true_label,
                 poll=self._poll,
@@ -246,12 +260,14 @@ def status():
     out = {}
     for sid, det in _detectors.items():
         out[sid] = {
-            "state":        det._sm.state.name,
-            "model_trained": det._model.is_trained,
-            "baseline_count": det._baseline.count,
-            "polls":         det._poll,
+            "state":           det._sm.state.name,
+            "model_trained":   det._model.is_trained,
+            "baseline_count":  det._baseline.count,
+            "baseline_samples": CFG.baseline_samples,
+            "baseline_state":  det._baseline.state.name if hasattr(det, "_baseline") else "COLLECTING",
+            "polls":            det._poll,
         }
-    return jsonify({"switches": out, "coordinator": _coordinator.summary()})
+    return jsonify({"switches": out, "coordinator": _coordinator.summary(), "baseline_samples": CFG.baseline_samples})
 
 
 @app.route("/state", methods=["GET"])
@@ -261,23 +277,39 @@ def get_state():
     results = {}
     for sid, det in _detectors.items():
         results[sid] = {
-            "switch_id": sid,
-            "state": det._sm.state.name,
-            "phase": "LIVE" if det._model.is_trained else "BASELINE",
-            "raw_score": 0.0,
-            "soft_anomaly": False,
-            "hard_anomaly": False,
-            "percentile": 50,
+            "switch_id":        sid,
+            "state":            det._sm.state.name,
+            "phase":            "DETECTION" if det._model.is_trained else "BASELINE",
+            "model_trained":    det._model.is_trained,
+            "baseline_state":   det._baseline.state.name if hasattr(det, "_baseline") else "COLLECTING",
+            "collected":        det._baseline.count if hasattr(det, "_baseline") else 0,
+            "remaining":        max(0, CFG.baseline_samples - (det._baseline.count if hasattr(det, "_baseline") else 0)),
+            "baseline_samples": CFG.baseline_samples,
+            "raw_score":        0.0,
+            "soft_anomaly":     False,
+            "hard_anomaly":     False,
+            "percentile":       50,
             "network_severity": summary["severity"],
-            "features": {},
+            "features":         {},
         }
     return jsonify({
-        "status": "ok",
-        "coordinator": summary,
-        "results": results,
-        "alerts": [],
-        "auto_blocks": {},
+        "status":           "ok",
+        "coordinator":      summary,
+        "results":          results,
+        "baseline_samples": CFG.baseline_samples,
+        "alerts":           [],
+        "auto_blocks":      {},
     })
+
+
+@app.route("/baseline/configure", methods=["POST"])
+def configure_baseline():
+    body = request.get_json() or {}
+    samples = body.get("samples")
+    if samples and isinstance(samples, int) and 5 <= samples <= 500:
+        CFG.baseline_samples = samples
+        return jsonify({"status": "ok", "baseline_samples": CFG.baseline_samples})
+    return jsonify({"error": "Invalid samples (must be integer 5-500)"}), 400
 
 
 @app.route("/alerts/clear", methods=["POST"])
@@ -298,20 +330,24 @@ def trigger_autoblock():
 @app.route("/reset", methods=["POST"])
 def reset():
     body      = request.get_json() or {}
+    samples   = body.get("samples")
+    if samples and isinstance(samples, int) and 5 <= samples <= 500:
+        CFG.baseline_samples = samples
+
     switch_id = body.get("switch_id")
     if switch_id:
         det = _detectors.get(switch_id)
         if det:
             det.reset()
             _coordinator.reset(switch_id)
-        return jsonify({"reset": switch_id})
+        return jsonify({"reset": switch_id, "baseline_samples": CFG.baseline_samples})
     else:
         for det in _detectors.values():
             det.reset()
         _coordinator.reset()
         if _evaluator:
             _evaluator.reset()
-        return jsonify({"reset": "all"})
+        return jsonify({"reset": "all", "baseline_samples": CFG.baseline_samples})
 
 
 @app.route("/eval/start", methods=["POST"])

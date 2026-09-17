@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Layers,
@@ -1012,7 +1013,27 @@ export default function NetworkSlicing() {
             Assign hosts to isolated virtual networks with VLAN tagging and bandwidth control
           </p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Link
+            to="/slicing-verification"
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "9px 16px", borderRadius: 10,
+              border: "1px solid rgba(99, 102, 241, 0.4)", background: "rgba(99, 102, 241, 0.12)",
+              color: "#a5b4fc", fontSize: 13, fontWeight: 600, textDecoration: "none",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(99, 102, 241, 0.22)";
+              e.currentTarget.style.borderColor = "rgba(99, 102, 241, 0.7)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(99, 102, 241, 0.12)";
+              e.currentTarget.style.borderColor = "rgba(99, 102, 241, 0.4)";
+            }}
+          >
+            <Shield size={14} color="#818cf8" /> Verify Slicing Architecture
+          </Link>
           <button onClick={loadData} disabled={loading}
             style={{
               display: "flex", alignItems: "center", gap: 6,
