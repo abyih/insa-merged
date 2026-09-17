@@ -254,6 +254,47 @@ def status():
     return jsonify({"switches": out, "coordinator": _coordinator.summary()})
 
 
+@app.route("/state", methods=["GET"])
+@app.route("/analyze", methods=["GET", "POST"])
+def get_state():
+    summary = _coordinator.summary()
+    results = {}
+    for sid, det in _detectors.items():
+        results[sid] = {
+            "switch_id": sid,
+            "state": det._sm.state.name,
+            "phase": "LIVE" if det._model.is_trained else "BASELINE",
+            "raw_score": 0.0,
+            "soft_anomaly": False,
+            "hard_anomaly": False,
+            "percentile": 50,
+            "network_severity": summary["severity"],
+            "features": {},
+        }
+    return jsonify({
+        "status": "ok",
+        "coordinator": summary,
+        "results": results,
+        "alerts": [],
+        "auto_blocks": {},
+    })
+
+
+@app.route("/alerts/clear", methods=["POST"])
+def clear_alerts():
+    return jsonify({"status": "ok"})
+
+
+@app.route("/rf-scores", methods=["POST"])
+def rf_scores():
+    return jsonify({"status": "ok"})
+
+
+@app.route("/auto-block/trigger", methods=["POST"])
+def trigger_autoblock():
+    return jsonify({"status": "ok"})
+
+
 @app.route("/reset", methods=["POST"])
 def reset():
     body      = request.get_json() or {}
@@ -359,5 +400,6 @@ if __name__ == "__main__":
     print("  POST /mitigation/block — install switch-wide drop rule")
     print("  POST /mitigation/rollback — remove all installed blocks")
     print("  GET  /mitigation/status — list active blocks")
-    print("=" * 60)
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    port = int(os.environ.get("DETECTOR_PORT", os.environ.get("ONLINE_IF_PORT", 5003)))
+    print("  Online IF Detector — port %d" % port)
+    app.run(host="0.0.0.0", port=port, debug=False)

@@ -38,7 +38,7 @@ import {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const SERVER_URLS = {
-  ONLINE: "http://localhost:5001",
+  ONLINE: "http://localhost:5003",
   OFFLINE: "http://localhost:5002",
 };
 
@@ -786,7 +786,12 @@ export default function AnomalyDetector() {
           id: Date.now() + Math.floor(Math.random() * 1000),
           switch: mergedData.src,
           switch_id: mergedData.src,
-          state: mergedData.state === 0 || mergedData.state === "NORMAL" ? "NORMAL" : "ATTACK",
+          state:
+            mergedData.state === "ATTACK" || (mergedData.is_attack && mergedData.attack_type !== "Normal")
+              ? "ATTACK"
+              : mergedData.state === "SUSPICIOUS"
+              ? "SUSPICIOUS"
+              : "NORMAL",
           attack_type: attackName,
           attack_prob: mergedData.attack_prob ?? 0,
           rf_zone: mergedData.rf_zone ?? "benign",
@@ -1376,7 +1381,7 @@ export default function AnomalyDetector() {
                   boxShadow: connected.ONLINE ? "0 0 6px #22c55e" : "none",
                 }}
               />
-              IF {connected.ONLINE === null ? "…" : connected.ONLINE ? "Live (5001)" : "Down"}
+              IF {connected.ONLINE === null ? "…" : connected.ONLINE ? "Live (5003)" : "Down"}
             </span>
 
             <span
@@ -1560,7 +1565,7 @@ export default function AnomalyDetector() {
           <div>
             <p style={{ margin: 0, fontWeight: 700 }}>
               {connected.ONLINE === false && connected.OFFLINE === false && mode === "HYBRID"
-                ? "Both detection backends (5001 & 5002) are unreachable. Telemetry values below reflect standby state."
+                ? "Both detection backends (5003 & 5002) are unreachable. Telemetry values below reflect standby state."
                 : connected.ONLINE === false && (mode === "ONLINE" || mode === "HYBRID")
                 ? `IF Engine unreachable at ${SERVER_URLS.ONLINE}. Start the online engine process to activate live baseline analysis.`
                 : `RF Engine unreachable at ${SERVER_URLS.OFFLINE}. Start rf_detector.py on port 5002 to enable multi-class classification.`}
@@ -1895,7 +1900,7 @@ export default function AnomalyDetector() {
         <div style={{ ...S.glass, padding: "20px 24px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
             <h3 style={{ margin: 0, fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#38bdf8", display: "flex", alignItems: "center", gap: 8 }}>
-              <Server size={16} /> Online Isolation Forest Flow Features (Port 5001)
+              <Server size={16} /> Online Isolation Forest Flow Features (Port 5003)
             </h3>
             <span style={{ fontSize: 11, color: "var(--theme-text-muted, #71717a)", fontFamily: "monospace" }}>
               Switch: {worstIFResult?.switch_id || "global"} · Score: {fmt(worstIFResult?.raw_score, 4)}

@@ -6,9 +6,10 @@
 #   1. DevStack / OpenStack Backend Server (Node.js) -> Port 5000
 #   2. ONOS Slicing Middleware Server     (Node.js) -> Port 5001
 #   3. Offline RF Anomaly Detector         (Python)  -> Port 5002
-#   4. Local Neural Intent Service         (Python)  -> Port 5005
+#   4. Online IF Anomaly Detector          (Python)  -> Port 5003
+#   5. Local Neural Intent Service         (Python)  -> Port 5005
 # Optional:
-#   5. React / Vite Frontend (pass --with-frontend or -f) -> Port 5173
+#   6. React / Vite Frontend (pass --with-frontend or -f) -> Port 5173
 # ==============================================================================
 
 set -e
@@ -23,7 +24,7 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 MAGENTA='\033[0;35m'
-RED='\033[0;31m'
+DIM='\033[2m'
 NC='\033[0m' # No Color
 
 WITH_FRONTEND=false
@@ -42,8 +43,10 @@ for arg in "$@"; do
       echo "  -h, --help                    Display this help message"
       echo ""
       echo "Commands in package.json:"
-      echo "  npm run services              Start 4 backend services (Devstack, ONOS, Intent, Anomaly)"
-      echo "  npm run all:services          Start all 4 services + Vite frontend"
+      echo "  npm run services              Start all 5 backend services (Devstack, ONOS, RF, IF, Intent)"
+      echo "  npm run all:services          Start all 5 services + Vite frontend"
+      echo "  npm run anomaly:if            Start Online IF detector standalone (port 5003)"
+      echo "  npm run anomaly:rf            Start Offline RF detector standalone (port 5002)"
       echo ""
       exit 0
       ;;
@@ -55,8 +58,9 @@ echo -e "${BOLD}${CYAN}   🚀 Starting SDN Dashboard Multi-Service Stack       
 echo -e "${BOLD}${CYAN}==============================================================${NC}"
 echo -e " ${BLUE}● [DEVSTACK]${NC} Server       : http://localhost:5000 (server.js)"
 echo -e " ${CYAN}● [ONOS]${NC}     Server       : http://localhost:5001 (server-onos.js)"
-echo -e " ${YELLOW}● [ANOMALY]${NC}  RF Detector  : http://localhost:5002 (anomaly/rf_detector.py)"
-echo -e " ${MAGENTA}● [INTENT]${NC}   Neural Engine: http://localhost:5005 (anomaly/intent_service.py)"
+echo -e " ${YELLOW}● [RF]${NC}       RF Detector  : http://localhost:5002 (anomaly/rf_detector.py)"
+echo -e " ${MAGENTA}● [IF]${NC}       Online IF    : http://localhost:5003 (anomaly/detector.py)"
+echo -e " ${DIM}● [INTENT]${NC}   Neural Engine: http://localhost:5005 (anomaly/intent_service.py)"
 if [ "$WITH_FRONTEND" = true ]; then
   echo -e " ${GREEN}● [VITE]${NC}     React UI     : http://localhost:5173 (vite)"
 fi
