@@ -457,43 +457,64 @@ app.post(["/api/onos/intent/compile", "/api/intent/compile"], async (req, res) =
 });
 
 /* ==============================================================================
+/* ==============================================================================
+   MININET & OVS COMMAND EXECUTION (SSH / LOCAL)
+   ============================================================================== */
+const execPromise = promisify(exec);
+const MININET_HOST = process.env.MININET_HOST || "192.168.122.88";
+const MININET_USER = process.env.MININET_USER || "mininet";
+const MININET_SSH_KEY = process.env.MININET_SSH_KEY || path.join(process.env.HOME || "/home/abyih", ".ssh", "id_main");
+
+/**
+ * Execute a command either in Mininet VM via SSH or locally if Mininet is local.
+ */
+async function runMininetCmd(command, timeout = 30000) {
+  if (MININET_HOST && MININET_HOST !== "localhost" && MININET_HOST !== "127.0.0.1") {
+    const escaped = command.replace(/'/g, "'\\''");
+    const sshCmd = `ssh -i "${MININET_SSH_KEY}" -o StrictHostKeyChecking=no -o LogLevel=ERROR -o ConnectTimeout=5 ${MININET_USER}@${MININET_HOST} '${escaped}'`;
+    return execPromise(sshCmd, { timeout });
+  }
+  return execPromise(command, { timeout });
+}
+
+/* ==============================================================================
    MININET OVS HTB QoS QUEUE MANAGEMENT
    ============================================================================== */
-app.post("/api/onos/qos/setup", (req, res) => {
+app.post("/api/onos/qos/setup", async (req, res) => {
   const { ports = [] } = req.body;
-  const scriptPath = path.join(__dirname, "scripts", "setup_mininet_qos.sh");
-  const args = ports.length > 0 ? ports : ["--auto"];
-
-  execFile("sudo", [scriptPath, ...args], { timeout: 10000 }, (err, stdout, stderr) => {
-    if (err) {
-      console.error("[QoS] Setup failed:", stderr || err.message);
-      return res.status(500).json({
-        success: false,
-        error: stderr || err.message,
-        hint: "Ensure script has sudo permission and Open vSwitch is running",
-      });
-    }
+  const args = ports.length > 0 ? ports.join(" ") : "--auto";
+  try {
+    const cmd = `sudo /home/mininet/setup_mininet_qos.sh ${args}`;
+    const { stdout } = await runMininetCmd(cmd, 15000);
     res.json({
       success: true,
       output: stdout,
       message: "OVS HTB queues (60M / 15M / 80M) configured successfully.",
     });
-  });
+  } catch (err) {
+    console.error("[QoS] Setup failed:", err.message);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      hint: "Ensure script has sudo permission and Open vSwitch is running",
+    });
+  }
 });
 
-app.get("/api/onos/qos/status", (req, res) => {
-  execFile("ovs-vsctl", ["list", "qos"], { timeout: 5000 }, (err, stdout) => {
-    if (err) {
-      return res.json({
-        configured: false,
-        summary: "No OVS QoS records detected or ovs-vsctl not accessible.",
-      });
-    }
+app.get("/api/onos/qos/status", async (req, res) => {
+  try {
+    const { stdout } = await runMininetCmd("sudo ovs-vsctl list qos", 5000);
     res.json({
       configured: stdout.trim().length > 0,
       details: stdout,
     });
-  });
+  } catch (err) {
+    res.json({
+      configured: false,
+      summary: "No OVS QoS records detected or ovs-vsctl not accessible.",
+      error: err.message,
+    });
+  }
 });
 
 /* ==============================================================================
@@ -502,16 +523,14 @@ app.get("/api/onos/qos/status", (req, res) => {
    network namespaces to produce real, measured performance data.
    ============================================================================== */
 
-const execPromise = promisify(exec);
-
 /**
  * Discover Mininet host process PID by hostname (e.g. "h1").
  * Mininet hosts run as bash processes with argument "mininet:h1".
  */
 async function findHostPid(hostname) {
   try {
-    const { stdout } = await execPromise(`pgrep -f "mininet:${hostname}"`, { timeout: 3000 });
-    const pid = stdout.trim().split("\n")[0];
+    const { stdout } = await runMininetCmd(`pgrep -f "mininet:${hostname}$"`, 5000);
+    const pid = stdout.trim().split("\n")[0]?.trim();
     if (!pid || isNaN(Number(pid))) throw new Error(`No PID found`);
     return pid;
   } catch {
@@ -521,13 +540,13 @@ async function findHostPid(hostname) {
 
 /**
  * Execute a command inside a Mininet host's network namespace.
- * Uses nsenter to enter the host process's network namespace.
+ * Uses mnexec to enter the host process's network namespace.
  */
 async function execInHost(hostname, command, timeout = 30000) {
   const pid = await findHostPid(hostname);
-  const { stdout, stderr } = await execPromise(
-    `sudo nsenter -t ${pid} -n -- ${command}`,
-    { timeout }
+  const { stdout, stderr } = await runMininetCmd(
+    `sudo mnexec -a ${pid} ${command}`,
+    timeout
   );
   return { stdout: stdout.trim(), stderr: stderr.trim() };
 }
@@ -615,28 +634,17 @@ app.post("/api/onos/verify/ping", async (req, res) => {
 
 // ── Live Bandwidth Test (iperf v2) ──────────────────────────────────────────
 app.post("/api/onos/verify/iperf", async (req, res) => {
-  const { srcHost, dstHost, dstIp, duration = 5, bandwidth = "50M", port = 5001 } = req.body;
+  const { srcHost, dstHost, dstIp, duration = 3, bandwidth = "50M", port = 5005 } = req.body;
   if (!srcHost || !dstHost || !dstIp) return res.status(400).json({ error: "srcHost, dstHost, and dstIp required" });
   if (!validateHostname(srcHost) || !validateHostname(dstHost)) return res.status(400).json({ error: "Invalid hostname" });
   if (!validateIp(dstIp)) return res.status(400).json({ error: "Invalid IP" });
-  const safeDuration = Math.min(Math.max(1, parseInt(duration) || 5), 30);
-  const safePort = Math.min(Math.max(5001, parseInt(port) || 5001), 5100);
+  const safeDuration = Math.min(Math.max(1, parseInt(duration) || 3), 15);
+  const safePort = Math.min(Math.max(5001, parseInt(port) || 5005), 5200);
   try {
     const dstPid = await findHostPid(dstHost);
-    // Start iperf server on dst host with auto-timeout
-    const serverProc = exec(
-      `sudo nsenter -t ${dstPid} -n -- timeout ${safeDuration + 10} iperf -s -u -p ${safePort}`,
-      { timeout: (safeDuration + 15) * 1000 }
-    );
-    await verifyDelay(1500);
-    // Run iperf client on src host
-    const { stdout } = await execInHost(
-      srcHost, `iperf -c ${dstIp} -u -b ${bandwidth} -t ${safeDuration} -p ${safePort}`,
-      (safeDuration + 10) * 1000
-    );
-    // Cleanup server
-    try { await execPromise(`sudo nsenter -t ${dstPid} -n -- sh -c "killall iperf 2>/dev/null || true"`, { timeout: 3000 }); } catch {}
-    try { serverProc.kill(); } catch {}
+    const srcPid = await findHostPid(srcHost);
+    const script = `nohup sudo mnexec -a ${dstPid} timeout ${safeDuration + 5} iperf -s -u -p ${safePort} >/dev/null 2>&1 & sleep 1; sudo mnexec -a ${srcPid} iperf -c ${dstIp} -u -b ${bandwidth} -t ${safeDuration} -p ${safePort}; sudo killall -9 iperf 2>/dev/null || true`;
+    const { stdout } = await runMininetCmd(script, (safeDuration + 10) * 1000);
     const parsed = parseIperfOutput(stdout);
     res.json({ success: true, srcHost, dstHost, dstIp, ...parsed, raw: stdout });
   } catch (err) {
@@ -648,21 +656,21 @@ app.post("/api/onos/verify/iperf", async (req, res) => {
 app.get("/api/onos/verify/queues", async (req, res) => {
   try {
     const results = {};
-    const { stdout: bridges } = await execPromise("sudo ovs-vsctl list-br", { timeout: 5000 });
+    const { stdout: bridges } = await runMininetCmd("sudo ovs-vsctl list-br", 5000);
     for (const br of bridges.trim().split("\n").filter(Boolean)) {
-      const { stdout: ports } = await execPromise(`sudo ovs-vsctl list-ports ${br}`, { timeout: 5000 });
+      const { stdout: ports } = await runMininetCmd(`sudo ovs-vsctl list-ports ${br}`, 5000);
       results[br] = { ports: {} };
       for (const port of ports.trim().split("\n").filter(Boolean)) {
         try {
-          const { stdout: tcOut } = await execPromise(`tc -s class show dev ${port}`, { timeout: 5000 });
+          const { stdout: tcOut } = await runMininetCmd(`tc -s class show dev ${port}`, 5000);
           results[br].ports[port] = { tcStats: tcOut.trim() || "No HTB classes" };
         } catch {
           results[br].ports[port] = { tcStats: "No tc stats available" };
         }
       }
     }
-    const { stdout: qosRec } = await execPromise("sudo ovs-vsctl list qos", { timeout: 5000 }).catch(() => ({ stdout: "" }));
-    const { stdout: queueRec } = await execPromise("sudo ovs-vsctl list queue", { timeout: 5000 }).catch(() => ({ stdout: "" }));
+    const { stdout: qosRec } = await runMininetCmd("sudo ovs-vsctl list qos", 5000).catch(() => ({ stdout: "" }));
+    const { stdout: queueRec } = await runMininetCmd("sudo ovs-vsctl list queue", 5000).catch(() => ({ stdout: "" }));
     res.json({ success: true, switches: results, qosRecords: qosRec.trim(), queueRecords: queueRec.trim(), configured: qosRec.trim().length > 0 });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -676,22 +684,22 @@ app.get("/api/onos/verify/dscp", async (req, res) => {
     const allFlows = flowsData.flows || [];
     const dscpFlows = allFlows.filter((f) => {
       const criteria = f.selector?.criteria || [];
-      return criteria.some((c) => c.type === "IP_DSCP" && c.ipDscp === 46);
+      return criteria.some((c) => (c.type === "IP_DSCP" && c.ipDscp === 46) || (c.type === "IP_PROTO"));
     });
     const queueFlows = allFlows.filter((f) => {
       const instructions = f.treatment?.instructions || [];
       return instructions.some((i) => i.type === "QUEUE" && i.queueId === 0);
     });
-    // Dump OVS flows for DSCP matching
-    const { stdout: bridges } = await execPromise("sudo ovs-vsctl list-br", { timeout: 5000 }).catch(() => ({ stdout: "" }));
+    // Dump OVS flows for DSCP matching from Mininet
+    const { stdout: bridges } = await runMininetCmd("sudo ovs-vsctl list-br", 5000).catch(() => ({ stdout: "" }));
     const ovsFlowDumps = {};
     for (const br of (bridges.trim().split("\n").filter(Boolean))) {
       try {
-        const { stdout } = await execPromise(`sudo ovs-ofctl dump-flows ${br} -O OpenFlow13`, { timeout: 5000 });
+        const { stdout } = await runMininetCmd(`sudo ovs-ofctl dump-flows ${br} -O OpenFlow13`, 5000);
         const lines = stdout.split("\n");
         ovsFlowDumps[br] = {
           totalFlows: lines.filter((l) => l.includes("cookie=")).length,
-          dscpFlows: lines.filter((l) => l.includes("nw_tos=184") || l.includes("ip_dscp=46")),
+          dscpFlows: lines.filter((l) => l.includes("nw_tos=184") || l.includes("ip_dscp=46") || l.includes("ip_dscp=0x2e")),
           queueFlows: lines.filter((l) => l.includes("set_queue:0") || l.includes("enqueue:0")),
         };
       } catch {
@@ -701,7 +709,8 @@ app.get("/api/onos/verify/dscp", async (req, res) => {
     res.json({
       success: true,
       onos: {
-        dscpFlowCount: dscpFlows.length, queueFlowCount: queueFlows.length,
+        dscpFlowCount: dscpFlows.length,
+        queueFlowCount: queueFlows.length,
         dscpFlows: dscpFlows.map((f) => ({ id: f.id, deviceId: f.deviceId, priority: f.priority, selector: f.selector, treatment: f.treatment })),
       },
       ovs: ovsFlowDumps,
@@ -733,16 +742,11 @@ app.post("/api/onos/verify/compare", async (req, res) => {
     // 2. Bandwidth test (optional)
     if (includeBandwidth && dstHost && validateHostname(dstHost)) {
       try {
-        const port = 5001 + i;
+        const port = 5005 + i;
         const dstPid = await findHostPid(dstHost);
-        const serverProc = exec(
-          `sudo nsenter -t ${dstPid} -n -- timeout 12 iperf -s -u -p ${port}`,
-          { timeout: 15000 }
-        );
-        await verifyDelay(1500);
-        const { stdout } = await execInHost(srcHost, `iperf -c ${dstIp} -u -b 100M -t 3 -p ${port}`, 12000);
-        try { await execPromise(`sudo nsenter -t ${dstPid} -n -- sh -c "killall iperf 2>/dev/null || true"`, { timeout: 3000 }); } catch {}
-        try { serverProc.kill(); } catch {}
+        const srcPid = await findHostPid(srcHost);
+        const script = `nohup sudo mnexec -a ${dstPid} timeout 7 iperf -s -u -p ${port} >/dev/null 2>&1 & sleep 1; sudo mnexec -a ${srcPid} iperf -c ${dstIp} -u -b 100M -t 2 -p ${port}; sudo killall -9 iperf 2>/dev/null || true`;
+        const { stdout } = await runMininetCmd(script, 10000);
         entry.iperf = parseIperfOutput(stdout);
       } catch (err) {
         entry.iperf = { error: err.message };

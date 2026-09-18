@@ -233,6 +233,30 @@ export default function SlicingVerification() {
     }
   };
 
+  const [qosSetupLoading, setQosSetupLoading] = useState(false);
+  const setupQosQueues = async () => {
+    setQosSetupLoading(true);
+    setAuditMessage(null);
+    try {
+      const res = await fetch("/api/onos/qos/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAuditMessage({ type: "success", text: "OVS HTB queues (60M / 15M) configured successfully on all switch ports!" });
+        await checkQueues();
+      } else {
+        setAuditMessage({ type: "error", text: `QoS setup failed: ${data.error}` });
+      }
+    } catch (err) {
+      setAuditMessage({ type: "error", text: `QoS setup error: ${err.message}` });
+    } finally {
+      setQosSetupLoading(false);
+    }
+  };
+
   const verifyDscp = async () => {
     setDscpLoading(true);
     try {
@@ -659,9 +683,14 @@ export default function SlicingVerification() {
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
               <Gauge size={18} style={{ color: "#f59e0b" }} /> OVS Queue Statistics
             </h3>
-            <button onClick={checkQueues} disabled={queueLoading} className="btn-reactive" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", background: "rgba(245, 158, 11, 0.12)", border: "1px solid rgba(245, 158, 11, 0.3)", color: "#fbbf24" }}>
-              <Play size={12} /> {queueLoading ? "Checking..." : "Check Queues"}
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button onClick={setupQosQueues} disabled={qosSetupLoading} className="btn-reactive" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", background: "rgba(56, 189, 248, 0.12)", border: "1px solid rgba(56, 189, 248, 0.3)", color: "#38bdf8" }}>
+                <Zap size={12} /> {qosSetupLoading ? "Configuring..." : "Setup Queues"}
+              </button>
+              <button onClick={checkQueues} disabled={queueLoading} className="btn-reactive" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", background: "rgba(245, 158, 11, 0.12)", border: "1px solid rgba(245, 158, 11, 0.3)", color: "#fbbf24" }}>
+                <Play size={12} /> {queueLoading ? "Checking..." : "Check Queues"}
+              </button>
+            </div>
           </div>
 
           {queueStats ? (

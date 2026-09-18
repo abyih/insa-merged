@@ -55,13 +55,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$AUTO_MODE" == true ]]; then
-  # Auto-detect mininet switch ports (e.g. s1-eth1, s2-eth1) or ports on br-int
-  echo "[QoS] Auto-detecting Mininet switch ports..."
-  while read -r port; do
-    if [[ -n "$port" ]]; then
-      PORTS+=("$port")
-    fi
-  done < <(ovs-vsctl list-ports s1 2>/dev/null || ovs-vsctl list-ports br-int 2>/dev/null || true)
+  # Auto-detect all mininet switch ports across all switches (s1, s2, s3, s4...)
+  echo "[QoS] Auto-detecting Mininet switch ports across all switches..."
+  for br in $(ovs-vsctl list-br 2>/dev/null || true); do
+    while read -r port; do
+      if [[ -n "$port" ]]; then
+        PORTS+=("$port")
+      fi
+    done < <(ovs-vsctl list-ports "$br" 2>/dev/null || true)
+  done
 fi
 
 if [[ ${#PORTS[@]} -eq 0 ]]; then
