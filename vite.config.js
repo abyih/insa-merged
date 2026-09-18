@@ -62,6 +62,13 @@ export default defineConfig(({ mode }) => {
           timeout: 10000,
           proxyTimeout: 10000,
         },
+        // Live verification test endpoints (ping, iperf, queue stats, DSCP check)
+        "/api/onos/verify": {
+          target: "http://127.0.0.1:5001",
+          changeOrigin: true,
+          timeout: 30000,
+          proxyTimeout: 30000,
+        },
         // Dedicated ONOS & Mininet QoS backend (server-onos.js on port 5001)
         "/api/onos-service": {
           target: "http://127.0.0.1:5001",
