@@ -2,6 +2,7 @@
 
 
 import React, { useEffect, useState } from "react";
+import { Terminal } from "lucide-react";
 
 const SLICE_COLOR_PALETTE = [
   "#FF6B6B", "#4ECDC4", "#FFD166", "#A78BFA",
@@ -96,6 +97,7 @@ const [capacityStatus, setCapacityStatus] = useState(null);
   const [savingLlmKey, setSavingLlmKey] = useState(false);
   const [sliceTopology, setSliceTopology] = useState(null);
   const [topologyLoading, setTopologyLoading] = useState(false);
+  const [consoleLoading, setConsoleLoading] = useState({});
 
   const [form, setForm] = useState({
     name: "",
@@ -131,14 +133,34 @@ const [capacityStatus, setCapacityStatus] = useState(null);
 
       setSlices(slicesData.slices || []);
       setCapabilities(capsData.capabilities || null);
-const capacityData = await capacityRes.json();
+      const capacityData = await capacityRes.json();
       setCapacityStatus(capacityData);
       setNetworks(cloudData.networks || []);
       setVms(cloudData.virtualMachines || []);
-    } catch (err) {
-      setError(err.message || "Failed to load slices");
+    } catch (e) {
+      console.error("Failed to load initial data", e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function openConsole(vmId, vmName = "VM") {
+    setConsoleLoading((prev) => ({ ...prev, [vmId]: true }));
+    try {
+      const response = await fetch(`/api/openstack/console/${vmId}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.success || !payload.url) {
+        throw new Error(payload.error || "Failed to retrieve noVNC console URL");
+      }
+      window.open(payload.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      alert(`Failed to open console for "${vmName}": ${err.message}`);
+    } finally {
+      setConsoleLoading((prev) => {
+        const next = { ...prev };
+        delete next[vmId];
+        return next;
+      });
     }
   }
 
@@ -633,9 +655,20 @@ const capacityData = await capacityRes.json();
                         <div key={t.vmId} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-xs">
                           <div className="flex items-center justify-between mb-1">
                             <span className="font-semibold">{t.vmName}</span>
-                            <span className={t.odlVisible ? "text-green-400" : "text-red-400"}>
-                              {t.odlVisible ? "● Visible in ODL" : "● Not visible"}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => openConsole(t.vmId, t.vmName)}
+                                disabled={Boolean(consoleLoading[t.vmId])}
+                                title="Open noVNC Web Console"
+                                className="px-2 py-0.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-400 font-semibold transition cursor-pointer flex items-center gap-1 text-[11px] border border-indigo-500/30"
+                              >
+                                <Terminal className={`w-3 h-3 ${consoleLoading[t.vmId] ? "animate-spin" : ""}`} />
+                                Console
+                              </button>
+                              <span className={t.odlVisible ? "text-green-400" : "text-red-400"}>
+                                {t.odlVisible ? "● Visible in ODL" : "● Not visible"}
+                              </span>
+                            </div>
                           </div>
                           <p className="text-slate-500">
                             {t.ipAddress || "no IP"} → {t.ovsInterface || "—"} → {t.odlNodeConnectorId || "—"}

@@ -2255,6 +2255,198 @@ app.get("/api/openstack/cloud-summary", async (req, res) => {
 });
 
 /* =========================
+   VM CONSOLE ACCESS (noVNC)
+   ========================= */
+app.get("/api/openstack/console/:serverId", async (req, res) => {
+  const { serverId } = req.params;
+  if (!serverId) {
+    return res.status(400).json({ error: "Server ID is required." });
+  }
+
+  try {
+    // 1. Try modern Nova 2.6+ remote-consoles API
+    try {
+      const consoleData = await osJson(`${NOVA_URL}/servers/${serverId}/remote-consoles`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "OpenStack-API-Version": "compute 2.6",
+        },
+        body: JSON.stringify({
+          remote_console: { protocol: "vnc", type: "novnc" },
+        }),
+      });
+
+      if (consoleData?.remote_console?.url) {
+        return res.json({
+          success: true,
+          url: consoleData.remote_console.url,
+        });
+      }
+    } catch (modernErr) {
+      console.warn(
+        `[Console] Modern Nova remote-consoles API failed for ${serverId} (${modernErr.message}), trying legacy os-getVNCConsole fallback...`
+      );
+    }
+
+    // 2. Fallback: Classic os-getVNCConsole action API
+    const legacyData = await osJson(`${NOVA_URL}/servers/${serverId}/action`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        "os-getVNCConsole": { type: "novnc" },
+      }),
+    });
+
+    if (legacyData?.console?.url) {
+      return res.json({
+        success: true,
+        url: legacyData.console.url,
+      });
+    }
+
+    throw new Error("No VNC console URL returned by OpenStack Nova");
+  } catch (error) {
+    console.error(`[Console] Error fetching console for server ${serverId}:`, error.message);
+    res.status(500).json({ error: error.message || "Failed to get console URL" });
+  }
+});
+
+/* =========================
+   VM INSTANCE ACTIONS (Start / Stop / Reboot)
+   ========================= */
+app.post("/api/openstack/servers/:id/action", async (req, res) => {
+  const { id } = req.params;
+  const { action } = req.body;
+
+  let body = {};
+  if (action === "start") body = { "os-start": null };
+  else if (action === "stop") body = { "os-stop": null };
+  else if (action === "reboot") body = { reboot: { type: "SOFT" } };
+  else if (typeof action === "object") body = action;
+  else body = { [action]: null };
+
+  try {
+    await osJson(`${NOVA_URL}/servers/${id}/action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    res.json({ success: true, message: `Action "${action}" sent to instance.` });
+  } catch (error) {
+    console.error(`[VM Action] Failed to execute ${action} on ${id}:`, error.message);
+    res.status(500).json({ error: error.message || `Failed to execute action ${action}` });
+  }
+});
+
+/* =========================
+   DELETE INSTANCE (Supports both /vms/:id and /delete-vm/:id)
+   ========================= */
+app.delete(["/api/openstack/vms/:id", "/api/openstack/delete-vm/:id"], async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: "Instance ID is required." });
+
+  try {
+    await osJson(`${NOVA_URL}/servers/${id}`, { method: "DELETE" });
+    res.json({ success: true, message: `Instance ${id} deleted successfully.` });
+  } catch (error) {
+    console.error(`[Delete VM] Error deleting ${id}:`, error.message);
+    res.status(500).json({ error: error.message || "Failed to delete instance" });
+  }
+});
+
+/* =========================
+   CREATE INSTANCE
+   ========================= */
+app.post(["/api/openstack/create-vm", "/api/openstack/launch-instance"], async (req, res) => {
+  const { name, flavor, image, network } = req.body;
+  if (!name || !flavor || !image || !network) {
+    return res.status(400).json({ error: "name, flavor, image, and network are required." });
+  }
+
+  try {
+    const flavorsData = await osJson(`${NOVA_URL}/flavors`);
+    const flavorObj = (flavorsData.flavors || []).find((f) => f.name === flavor || f.id === flavor);
+    if (!flavorObj) return res.status(400).json({ error: `Flavor not found: ${flavor}` });
+
+    const imagesData = await osJson(`${GLANCE_URL}/images?name=${encodeURIComponent(image)}`);
+    const imageObj = (imagesData.images || [])[0];
+    if (!imageObj) return res.status(400).json({ error: `Image not found: ${image}` });
+
+    const networksData = await osJson(`${NEUTRON_URL}/networks?name=${encodeURIComponent(network)}`);
+    const networkObj = (networksData.networks || [])[0];
+    if (!networkObj) return res.status(400).json({ error: `Network not found: ${network}` });
+
+    const serverBody = {
+      server: {
+        name,
+        flavorRef: flavorObj.id,
+        imageRef: imageObj.id,
+        networks: [{ uuid: networkObj.id }],
+      },
+    };
+
+    const created = await osJson(`${NOVA_URL}/servers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(serverBody),
+    });
+
+    res.json({
+      success: true,
+      server: created.server,
+      message: `Instance "${name}" created successfully.`,
+    });
+  } catch (error) {
+    console.error("[Create VM] Error:", error.message);
+    res.status(500).json({ error: error.message || "Failed to create VM" });
+  }
+});
+
+/* =========================
+   CREATE NETWORK & SUBNET
+   ========================= */
+app.post("/api/openstack/create-network", async (req, res) => {
+  const { name, cidr } = req.body;
+  if (!name || !cidr) return res.status(400).json({ error: "name and cidr are required." });
+
+  try {
+    const createdNetwork = await osJson(`${NEUTRON_URL}/networks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        network: { name, admin_state_up: true },
+      }),
+    });
+    const networkId = createdNetwork.network.id;
+    const createdSubnet = await osJson(`${NEUTRON_URL}/subnets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subnet: {
+          network_id: networkId,
+          ip_version: 4,
+          cidr,
+          name: `${name}-subnet`,
+        },
+      }),
+    });
+
+    res.json({
+      success: true,
+      network: createdNetwork.network,
+      subnet: createdSubnet.subnet,
+      message: `Network "${name}" created successfully.`,
+    });
+  } catch (error) {
+    console.error("[Create Network] Error:", error.message);
+    res.status(500).json({ error: error.message || "Failed to create network" });
+  }
+});
+
+/* =========================
    INFRASTRUCTURE HEALTH CHECK
    ========================= */
 async function checkInfrastructureStatus() {

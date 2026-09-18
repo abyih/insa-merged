@@ -22,6 +22,7 @@ import {
   Layers,
   ArrowRight,
   ExternalLink,
+  Terminal,
 } from "lucide-react";
 
 export default function Cloud() {
@@ -60,6 +61,7 @@ export default function Cloud() {
 
   // Action loading states
   const [actionLoading, setActionLoading] = useState({}); // { [vmId]: 'reboot' | 'start' | 'stop' | 'delete' }
+  const [consoleLoading, setConsoleLoading] = useState({}); // { [vmId]: true }
 
   // Confirmation dialog
   const [confirmDialog, setConfirmDialog] = useState({
@@ -266,6 +268,27 @@ export default function Cloud() {
       triggerNotification("error", `Failed to ${action} instance: ${err.message}`);
     } finally {
       setActionLoading((prev) => {
+        const next = { ...prev };
+        delete next[vmId];
+        return next;
+      });
+    }
+  }
+
+  async function openConsole(vmId, vmName = "VM") {
+    setConsoleLoading((prev) => ({ ...prev, [vmId]: true }));
+    try {
+      const response = await fetch(`/api/openstack/console/${vmId}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.success || !payload.url) {
+        throw new Error(payload.error || "Failed to retrieve noVNC console URL");
+      }
+      triggerNotification("success", `Opening noVNC console for "${vmName}" in a new window...`);
+      window.open(payload.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      triggerNotification("error", `Failed to open console for "${vmName}": ${err.message}`);
+    } finally {
+      setConsoleLoading((prev) => {
         const next = { ...prev };
         delete next[vmId];
         return next;
@@ -829,6 +852,17 @@ export default function Cloud() {
                                         <RotateCw className="w-3.5 h-3.5 text-indigo-400" />
                                       </button>
 
+                                      {/* noVNC Web Console action */}
+                                      <button
+                                        onClick={() => openConsole(vm.id, vm.name)}
+                                        disabled={Boolean(consoleLoading[vm.id])}
+                                        title="Open noVNC Web Console"
+                                        className="px-2.5 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900 text-indigo-300 hover:text-indigo-200 border border-indigo-800/60 transition disabled:opacity-40 cursor-pointer flex items-center gap-1.5 shadow-sm"
+                                      >
+                                        <Terminal className={`w-3.5 h-3.5 text-indigo-400 ${consoleLoading[vm.id] ? "animate-spin" : ""}`} />
+                                        <span className="text-[11px] font-bold">Console</span>
+                                      </button>
+
                                       {/* Delete action */}
                                       <button
                                         onClick={() => confirmDeleteVm(vm)}
@@ -883,6 +917,15 @@ export default function Cloud() {
                             className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition cursor-pointer"
                           >
                             Reboot
+                          </button>
+                          <button
+                            onClick={() => openConsole(selectedVm.id, selectedVm.name)}
+                            disabled={Boolean(consoleLoading[selectedVm.id])}
+                            title="Open noVNC Web Console"
+                            className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-700/80 transition cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Terminal className={`w-3.5 h-3.5 text-indigo-400 ${consoleLoading[selectedVm.id] ? "animate-spin" : ""}`} />
+                            Console
                           </button>
                           <button
                             onClick={() => confirmDeleteVm(selectedVm)}
