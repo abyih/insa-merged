@@ -1349,7 +1349,7 @@ app.post("/api/slices", async (req, res) => {
         const ports = portsData.ports || [];
         const results = [];
         for (const server of servers) {
-          const port = ports.find((p) => p.device_id === server.id);
+          const port = ports.find((p) => p.device_id === server.id && p.network_id === networkId);
           if (!port) continue;
           const ifaceName = `tap${port.id.slice(0, 11)}`;
           const r = await ovsDirect.enforceDualQueueDirect(ifaceName, standardMinKbps, maxKbps, fastLaneKbps);
@@ -1533,24 +1533,49 @@ app.put("/api/slices/:id", async (req, res) => {
       req.params.id,
     );
 
-    // Attach any newly selected VMs to the slice's network
+    // Attach any newly selected VMs to the slice's network, and detach removed VMs
     const targetNetworkId = b.networkId ?? existing.network_id;
     if (targetNetworkId && b.vmIds) {
       const existingVmIds = JSON.parse(existing.vm_ids || "[]");
       const newlyAddedVms = newVmIds.filter((id) => !existingVmIds.includes(id));
-      await Promise.all(
-        newlyAddedVms.map(async (vmId) => {
-          try {
-            await osJson(`${NOVA_URL}/servers/${vmId}/os-interface`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ interfaceAttachment: { net_id: targetNetworkId } }),
-            });
-          } catch (attachErr) {
-            console.error(`Slice Manager: failed to attach VM ${vmId} during edit:`, attachErr.message);
-          }
-        })
-      );
+      const removedVms = existingVmIds.filter((id) => !newVmIds.includes(id));
+
+      if (newlyAddedVms.length > 0) {
+        await Promise.all(
+          newlyAddedVms.map(async (vmId) => {
+            try {
+              await osJson(`${NOVA_URL}/servers/${vmId}/os-interface`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ interfaceAttachment: { net_id: targetNetworkId } }),
+              });
+            } catch (attachErr) {
+              console.error(`Slice Manager: failed to attach VM ${vmId} during edit:`, attachErr.message);
+            }
+          })
+        );
+      }
+
+      if (removedVms.length > 0) {
+        try {
+          const portsData = await osJson(`${NEUTRON_URL}/ports?network_id=${targetNetworkId}`);
+          const netPorts = portsData.ports || [];
+          await Promise.all(
+            removedVms.map(async (vmId) => {
+              const port = netPorts.find((p) => p.device_id === vmId);
+              if (port) {
+                try {
+                  await osJson(`${NOVA_URL}/servers/${vmId}/os-interface/${port.id}`, { method: "DELETE" });
+                } catch (detErr) {
+                  console.error(`Slice Manager: failed to detach VM ${vmId} during edit:`, detErr.message);
+                }
+              }
+            })
+          );
+        } catch (portsErr) {
+          console.error("Slice Manager: failed to query ports for VM detachment:", portsErr.message);
+        }
+      }
     }
 
     // Reconcile the Neutron DSCP marking rule with the new latency requirement if QoS policy exists
@@ -1604,8 +1629,9 @@ app.put("/api/slices/:id", async (req, res) => {
         const servers = (serversData.servers || []).filter((s) => newVmIds.includes(s.id));
         const ports = portsData.ports || [];
         const results = [];
+        const targetNetworkId = b.networkId ?? existing.network_id;
         for (const server of servers) {
-          const port = ports.find((p) => p.device_id === server.id);
+          const port = ports.find((p) => p.device_id === server.id && p.network_id === targetNetworkId);
           if (!port) continue;
           const ifaceName = `tap${port.id.slice(0, 11)}`;
           const r = await ovsDirect.enforceDualQueueDirect(ifaceName, standardMinKbps, maxKbps, fastLaneKbps);
@@ -1637,8 +1663,9 @@ app.put("/api/slices/:id", async (req, res) => {
         ]);
         const servers = (serversData.servers || []).filter((s) => newVmIds.includes(s.id));
         const ports = portsData.ports || [];
+        const clearTargetNetworkId = b.networkId ?? existing.network_id;
         for (const server of servers) {
-          const port = ports.find((p) => p.device_id === server.id);
+          const port = ports.find((p) => p.device_id === server.id && p.network_id === clearTargetNetworkId);
           if (!port) continue;
           const ifaceName = `tap${port.id.slice(0, 11)}`;
           await ovsDirect.clearQueueDirect(ifaceName);
@@ -1821,12 +1848,64 @@ app.delete("/api/slices/:id", async (req, res) => {
     // they did before (DB row removed, network+VMs left running).
     let networkDeleteBlocking = false;
     if (slice.network_id) {
+      // Detach any VM ports attached to this network before deleting it
+      let detachedComputePorts = false;
       try {
-        await osJson(`${NEUTRON_URL}/networks/${slice.network_id}`, { method: "DELETE" });
-      } catch (err) {
-        const is404 = /failed 404/.test(err.message);
-        cleanupErrors.push(`network: ${err.message}`);
-        if (!is404) networkDeleteBlocking = true;
+        const portsData = await osJson(`${NEUTRON_URL}/ports?network_id=${slice.network_id}`);
+        const netPorts = portsData.ports || [];
+        await Promise.all(
+          netPorts.map(async (port) => {
+            if (port.device_id && port.device_owner?.startsWith("compute:")) {
+              detachedComputePorts = true;
+              try {
+                await osJson(`${NOVA_URL}/servers/${port.device_id}/os-interface/${port.id}`, { method: "DELETE" });
+              } catch (detachErr) {
+                console.error(`Slice Manager: error detaching port ${port.id} from VM ${port.device_id}:`, detachErr.message);
+              }
+            } else {
+              try {
+                await osJson(`${NEUTRON_URL}/ports/${port.id}`, { method: "DELETE" });
+              } catch (_) {}
+            }
+          })
+        );
+      } catch (portsErr) {
+        cleanupErrors.push(`port cleanup: ${portsErr.message}`);
+      }
+
+      // If compute ports were detached, poll briefly for Nova to finish unbinding them from Neutron
+      if (detachedComputePorts) {
+        for (let wait = 0; wait < 10; wait++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const checkData = await osJson(`${NEUTRON_URL}/ports?network_id=${slice.network_id}`);
+            const remainingCompute = (checkData.ports || []).filter((p) => p.device_owner?.startsWith("compute:"));
+            if (remainingCompute.length === 0) break;
+          } catch (_) {
+            break;
+          }
+        }
+      }
+
+      // Retry network deletion up to 4 times if Neutron still reports ports in use
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          await osJson(`${NEUTRON_URL}/networks/${slice.network_id}`, { method: "DELETE" });
+          networkDeleteBlocking = false;
+          break;
+        } catch (err) {
+          const is404 = /failed 404/.test(err.message);
+          if (is404) {
+            networkDeleteBlocking = false;
+            break;
+          }
+          if (attempt < 3 && /409|NetworkInUse|ports still in use/i.test(err.message)) {
+            await new Promise((r) => setTimeout(r, 1500));
+            continue;
+          }
+          cleanupErrors.push(`network: ${err.message}`);
+          networkDeleteBlocking = true;
+        }
       }
     }
     if (networkDeleteBlocking) {
