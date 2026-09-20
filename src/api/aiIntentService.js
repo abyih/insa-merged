@@ -171,7 +171,7 @@ ${existingSliceSummaries || "None (fresh network)."}
 ### STRICT RULES:
 1. Match requested hosts/devices to the Available Discovered Hosts by IP, MAC, or context. If the user mentions "all hosts", assign all available hosts. If the user mentions specific IPs (e.g. 10.0.0.1 and 10.0.0.2), map them to the corresponding live host IPs/MACs.
 2. The bandwidth MUST NOT exceed the Available Remaining Capacity (${remainingCapacity} KB/s) unless forced, in which case set admissionStatus to "REJECTED_CAPACITY".
-3. Bandwidth must ALWAYS be specified as an integer in KB_PER_SEC (e.g., 10 Mbps = 1250 KB/s or 10000 KB/s, 50 Mbps = 6250 KB/s, 50 MB/s = 50000 KB/s).
+3. Bandwidth must ALWAYS be specified as an integer in KB_PER_SEC (e.g., 50 MB/s = 50000 KB/s, 20 MB/s = 20000 KB/s, 1500 KB/s = 1500 KB/s; if specified in bits: 80 Mbps = 10000 KB/s, 50 Mbps = 6250 KB/s).
 4. Provide a clear, technical rationale explaining the QoS decisions, 3GPP slice classification, and OpenFlow policy mapping.
 
 ### OUTPUT JSON SCHEMA:
@@ -218,16 +218,25 @@ export function compileIntentHeuristically(prompt, networkContext = {}) {
 
   // 2. Extract Bandwidth if explicitly specified in text
   let bandwidth = template.bandwidth;
-  const gbMatch = p.match(/(\d+(?:\.\d+)?)\s*(?:gbps|gb\/s|gigabit)/);
-  const mbMatch = p.match(/(\d+(?:\.\d+)?)\s*(?:mbps|mb\/s|megabit|mb)/);
-  const kbMatch = p.match(/(\d+(?:\.\d+)?)\s*(?:kbps|kb\/s|kilobit|kb)/);
+  const gbpsMatch = p.match(/(\d+(?:\.\d+)?)\s*(?:gbps|gigabit)/);
+  const gbsMatch = p.match(/(\d+(?:\.\d+)?)\s*(?:gb\/s|gb\b)/);
+  const mbpsMatch = p.match(/(\d+(?:\.\d+)?)\s*(?:mbps|megabit)/);
+  const mbsMatch = p.match(/(\d+(?:\.\d+)?)\s*(?:mb\/s|mb\b)/);
+  const kbpsMatch = p.match(/(\d+(?:\.\d+)?)\s*(?:kbps|kilobit)/);
+  const kbsMatch = p.match(/(\d+(?:\.\d+)?)\s*(?:kb\/s|kb\b)/);
 
-  if (gbMatch) {
-    bandwidth = Math.round(parseFloat(gbMatch[1]) * 1000000);
-  } else if (mbMatch) {
-    bandwidth = Math.round(parseFloat(mbMatch[1]) * 1000);
-  } else if (kbMatch) {
-    bandwidth = Math.round(parseFloat(kbMatch[1]));
+  if (gbsMatch) {
+    bandwidth = Math.round(parseFloat(gbsMatch[1]) * 1000000);
+  } else if (gbpsMatch) {
+    bandwidth = Math.round((parseFloat(gbpsMatch[1]) * 1000000) / 8);
+  } else if (mbsMatch) {
+    bandwidth = Math.round(parseFloat(mbsMatch[1]) * 1000);
+  } else if (mbpsMatch) {
+    bandwidth = Math.round((parseFloat(mbpsMatch[1]) * 1000) / 8);
+  } else if (kbsMatch) {
+    bandwidth = Math.round(parseFloat(kbsMatch[1]));
+  } else if (kbpsMatch) {
+    bandwidth = Math.round(parseFloat(kbpsMatch[1]) / 8);
   }
 
   // 3. Extract Hosts / IPs from prompt or match to live hosts

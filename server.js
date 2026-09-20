@@ -155,7 +155,7 @@
 // //   }
 // //   // ------------------------------------------------
 
-// //   tokenCache = { token, expiresAt };
+// //   tokenCache = { token, expiresAt, projectId: payload.token?.project?.id };
 // //   return token;
 // // };
 
@@ -2193,19 +2193,53 @@ async function findNetwork(nameOrId) {
 }
 
 /* =========================
+   OPENSTACK DIAGNOSTIC PING
+   ========================= */
+app.get("/api/openstack/ping", async (req, res) => {
+  try {
+    const token = await getToken();
+    res.json({
+      ok: true,
+      status: "connected",
+      keystoneUrl: KEYSTONE_URL,
+      neutronUrl: NEUTRON_URL,
+      novaUrl: NOVA_URL,
+      glanceUrl: GLANCE_URL,
+      authenticated: !!token,
+      message: "OpenStack Keystone and core services connected successfully",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      status: "disconnected",
+      keystoneUrl: KEYSTONE_URL,
+      error: err.message,
+      hint: "Verify KEYSTONE_URL in .env and ensure the DevStack VM is reachable at 192.168.122.156",
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+/* =========================
    OPENSTACK CLOUD SUMMARY
    ========================= */
 app.get("/api/openstack/cloud-summary", async (req, res) => {
   try {
-    const [serversData, networksData, routersData, portsData] = await Promise.all([
+    const [serversData, networksData, routersData, portsData, imagesData, flavorsData] = await Promise.all([
       osJson(`${NOVA_URL}/servers/detail`),
       osJson(`${NEUTRON_URL}/networks`),
       osJson(`${NEUTRON_URL}/routers`),
       osJson(`${NEUTRON_URL}/ports`),
+      osJson(`${GLANCE_URL}/images`).catch(() => ({ images: [] })),
+      osJson(`${NOVA_URL}/flavors/detail`).catch(() => ({ flavors: [] })),
     ]);
 
     const servers = serversData.servers || [];
-    const networks = networksData.networks || [];
+    const currentProjectId = tokenCache.projectId;
+    const networks = (networksData.networks || []).filter(
+      (n) => n.shared || (currentProjectId ? n.project_id === currentProjectId : true),
+    );
     const routers = routersData.routers || [];
     const ports = portsData.ports || [];
 
@@ -2289,6 +2323,9 @@ app.get("/api/openstack/cloud-summary", async (req, res) => {
       }));
     } catch (_) { }
 
+    const flavors = (flavorsData?.flavors || []).sort((a, b) => a.ram - b.ram);
+    const images = (imagesData?.images || []).filter((img) => img.status === "active");
+
     res.json({
       stats,
       virtualMachines,
@@ -2298,6 +2335,10 @@ app.get("/api/openstack/cloud-summary", async (req, res) => {
       flows: [],
       securityRules,
       infrastructureStatus,
+      availableFlavors: flavors.map((f) => ({ id: f.id, name: f.name, ram: f.ram, vcpus: f.vcpus, disk: f.disk })),
+      flavors: flavors.map((f) => ({ id: f.id, name: f.name, ram: f.ram, vcpus: f.vcpus, disk: f.disk })),
+      availableImages: images.map((img) => ({ id: img.id, name: img.name })),
+      images: images.map((img) => ({ id: img.id, name: img.name })),
     });
   } catch (error) {
     console.error("Cloud summary error:", error.message);
@@ -2420,23 +2461,67 @@ app.delete(["/api/openstack/vms/:id", "/api/openstack/delete-vm/:id"], async (re
    CREATE INSTANCE
    ========================= */
 app.post(["/api/openstack/create-vm", "/api/openstack/launch-instance"], async (req, res) => {
-  const { name, flavor, image, network } = req.body;
-  if (!name || !flavor || !image || !network) {
-    return res.status(400).json({ error: "name, flavor, image, and network are required." });
+  let { name, flavor, image, network } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: "VM name is required." });
   }
 
   try {
-    const flavorsData = await osJson(`${NOVA_URL}/flavors`);
-    const flavorObj = (flavorsData.flavors || []).find((f) => f.name === flavor || f.id === flavor);
+    const flavorsData = await osJson(`${NOVA_URL}/flavors/detail`);
+    let flavorObj;
+    if (!flavor || flavor === "Auto-select Smallest Flavor") {
+      flavorObj = (flavorsData.flavors || []).sort((a, b) => a.ram - b.ram)[0];
+    } else {
+      flavorObj = (flavorsData.flavors || []).find((f) => f.name === flavor || f.id === flavor);
+    }
     if (!flavorObj) return res.status(400).json({ error: `Flavor not found: ${flavor}` });
 
-    const imagesData = await osJson(`${GLANCE_URL}/images?name=${encodeURIComponent(image)}`);
-    const imageObj = (imagesData.images || [])[0];
+    // Real hypervisor capacity check (RAM, vCPU, and disk)
+    try {
+      const hvData = await osJson(`${NOVA_URL}/os-hypervisors/statistics`);
+      const stats = hvData.hypervisor_statistics || {};
+      const remainingRamMb = stats.memory_mb - stats.memory_mb_used;
+      const remainingVcpus = stats.vcpus - stats.vcpus_used;
+      const remainingDiskGb = stats.free_disk_gb ?? (stats.local_gb - stats.local_gb_used);
+      const neededRamMb = flavorObj.ram || 0;
+      const neededVcpus = flavorObj.vcpus || 0;
+      const neededDiskGb = flavorObj.disk || 0;
+      if (neededRamMb > remainingRamMb || neededVcpus > remainingVcpus || (neededDiskGb > 0 && neededDiskGb > remainingDiskGb)) {
+        return res.status(409).json({
+          error: `Insufficient hypervisor capacity. Flavor requires ${neededRamMb}MB RAM, ${neededVcpus} vCPU, ${neededDiskGb}GB disk, but hypervisor has ${remainingRamMb}MB RAM, ${remainingVcpus} vCPU, ${remainingDiskGb}GB disk free.`,
+        });
+      }
+    } catch (capErr) {
+      console.error("Capacity check (non-fatal):", capErr.message);
+    }
+
+    const imagesData = await osJson(`${GLANCE_URL}/images`);
+    let imageObj;
+    if (!image || image === "Auto-select Active Image") {
+      imageObj = (imagesData.images || []).find((img) => img.status === "active");
+    } else {
+      imageObj = (imagesData.images || []).find((img) => img.name === image || img.id === image);
+    }
     if (!imageObj) return res.status(400).json({ error: `Image not found: ${image}` });
 
-    const networksData = await osJson(`${NEUTRON_URL}/networks?name=${encodeURIComponent(network)}`);
-    const networkObj = (networksData.networks || [])[0];
+    const networksData = await osJson(`${NEUTRON_URL}/networks`);
+    const currentProjectId = tokenCache.projectId;
+    const accessibleNets = (networksData.networks || []).filter(
+      (n) => n.shared || (currentProjectId ? n.project_id === currentProjectId : true)
+    );
+    let networkObj;
+    if (!network || network === "Auto-select Private Network") {
+      networkObj = accessibleNets.find((n) => !n["router:external"]) || accessibleNets[0];
+    } else {
+      networkObj = (networksData.networks || []).find((n) => n.name === network || n.id === network);
+    }
     if (!networkObj) return res.status(400).json({ error: `Network not found: ${network}` });
+
+    if (!networkObj.shared && currentProjectId && networkObj.project_id !== currentProjectId) {
+      return res.status(400).json({
+        error: `Network "${network}" belongs to another project and is not shared.`,
+      });
+    }
 
     const serverBody = {
       server: {
@@ -2524,7 +2609,7 @@ async function checkInfrastructureStatus() {
   }
 
   await new Promise((resolve) => {
-    execFile("sudo", ["ovn-nbctl", "show"], { timeout: 5000 }, (error) => {
+    execFile("sudo", ["-n", "ovn-nbctl", "show"], { timeout: 3000 }, (error) => {
       if (!error) {
         status.ovnNbDb = { status: "Healthy", health: 95 };
         status.ovnSbDb = { status: "Connected", health: 88 };

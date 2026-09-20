@@ -56,7 +56,7 @@ const REFERENCE_ROWS = [
   { label: "SDN Queue", urllc: "Queue 0 (Strict Priority 1)", embb: "Queue 1 (Fair Queuing)", mmtc: "Standard Queue", unsliced: "Shared Default FIFO" },
   { label: "Flow Priority", urllc: "41,000 (Fast-Path)", embb: "40,000 (Unicast)", mmtc: "40,000 (Aggregated)", unsliced: "0 - 1,000 (Fallback)" },
   { label: "DSCP Marking", urllc: "DSCP 46 (EF)", embb: "DSCP 0 (Default)", mmtc: "DSCP 10/12 (AF)", unsliced: "None" },
-  { label: "Rate Control", urllc: "Guaranteed 60 Mbps", embb: "Meter (Token Bucket)", mmtc: "PPS Metering", unsliced: "Unregulated" },
+  { label: "Rate Control", urllc: "Guaranteed 60 MB/s", embb: "Meter (Token Bucket)", mmtc: "PPS Metering", unsliced: "Unregulated" },
   { label: "Expected Latency", urllc: "< 3 ms", embb: "25 - 65 ms", mmtc: "15 - 45 ms", unsliced: "80 - 250+ ms" },
   { label: "Expected Jitter", urllc: "< 0.4 ms", embb: "8 - 18 ms", mmtc: "5 - 12 ms", unsliced: "35 - 90 ms" },
   { label: "Isolation", urllc: "Strict (Priority 39000)", embb: "Meter Isolated", mmtc: "Standard Tenant", unsliced: "None / Dropped" },

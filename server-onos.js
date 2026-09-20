@@ -343,17 +343,17 @@ app.get(["/api/onos/summary", "/api/onos/cloud-summary"], async (req, res) => {
         queueId: 0,
         dscp: 46,
         description: "URLLC / Expedited Forwarding",
-        guaranteedRate: "60 Mbps",
+        guaranteedRate: "60 MB/s",
         priority: 1,
       },
       standardQueue: {
         queueId: 1,
         dscp: "Unmarked",
         description: "Standard / Best Effort",
-        guaranteedRate: "15 Mbps",
+        guaranteedRate: "15 MB/s",
         priority: 2,
       },
-      totalLinkCeiling: "80 Mbps",
+      totalLinkCeiling: "80 MB/s",
     };
 
     res.json({
@@ -792,6 +792,6 @@ app.listen(port, () => {
   console.log(`\n======================================================`);
   console.log(`🚀 Dedicated ONOS & Mininet Backend listening on :${port}`);
   console.log(`📡 ONOS Target Controller: ${ONOS_URL}`);
-  console.log(`⚡ Low-Latency QoS: Queue 0 (60 Mbps) + Queue 1 (15 Mbps)`);
+  console.log(`⚡ Low-Latency QoS: Queue 0 (60 MB/s) + Queue 1 (15 MB/s)`);
   console.log(`======================================================\n`);
 });

@@ -74,9 +74,9 @@ function formatBytes(bytes) {
 function formatRate(kbps) {
   const rate = Number(kbps);
   if (!kbps || isNaN(rate) || rate <= 0) return "0 KB/s";
-  if (rate >= 1000000) return (rate / 1000000).toFixed(1) + " GB/s";
-  if (rate >= 1000) return (rate / 1000).toFixed(1) + " MB/s";
-  return rate + " KB/s";
+  if (rate >= 1000000) return parseFloat((rate / 1000000).toFixed(1)) + " GB/s";
+  if (rate >= 1000) return parseFloat((rate / 1000).toFixed(1)) + " MB/s";
+  return parseFloat(rate.toFixed(1)) + " KB/s";
 }
 
 function getHostDisplayName(host) {
@@ -243,7 +243,7 @@ function SliceCard({ slice, onDelete, onEdit, onToggle, isExpanded }) {
                 background: "rgba(239,68,68,0.2)", color: "#ef4444", letterSpacing: 0.5,
                 border: "1px solid rgba(239,68,68,0.3)",
               }}>
-                ⚡ DSCP 46 • Queue 0 (60M)
+                ⚡ DSCP 46 • Queue 0 ({formatRate(slice.bandwidth ?? slice.bandwidthKbps ?? 60000)})
               </span>
             )}
           </div>
@@ -344,7 +344,7 @@ function SliceCard({ slice, onDelete, onEdit, onToggle, isExpanded }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--theme-card-border)" }}>
-                      {["Host (IP)", "MAC Address", "Switch", "Port", "Meter", "Bytes", "State"].map((h) => (
+                      {["Host (IP)", "MAC Address", "Switch", "Port", "Meter", "Traffic", "State"].map((h) => (
                         <th key={h} style={{
                           padding: "10px 14px", textAlign: "left", color: "var(--theme-text-muted)",
                           fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.8,

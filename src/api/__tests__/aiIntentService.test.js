@@ -64,6 +64,13 @@ describe("AI Intent Service (IBN Layer)", () => {
     expect(result.admissionStatus).toBe("APPROVED");
   });
 
+  it("consistently converts Mbps to KB/s according to network standard", () => {
+    const prompt = "Deploy low latency slice for robotics with 80 Mbps bandwidth";
+    const result = compileIntentHeuristically(prompt, mockNetworkContext);
+
+    expect(result.bandwidth).toBe(10000); // 80 Mbps = 10 MB/s = 10000 KB/s
+  });
+
   it("flags admission rejection when requested bandwidth exceeds remaining capacity", () => {
     const lowCapacityContext = {
       ...mockNetworkContext,

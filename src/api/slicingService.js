@@ -44,7 +44,7 @@ export const SLICE_TEMPLATES = [
   {
     id: "urllc",
     name: "URLLC (Ultra-Reliable Low-Latency)",
-    description: "Mission-critical low latency with DSCP 46 and Queue 0 priority scheduling (60 Mbps guaranteed)",
+    description: "Mission-critical low latency with DSCP 46 and Queue 0 priority scheduling (60 MB/s guaranteed)",
     bandwidth: 60000,
     burstSize: 10000,
     unit: "KB_PER_SEC",
@@ -52,7 +52,7 @@ export const SLICE_TEMPLATES = [
     type: "low-latency",
     dscp: 46,
     queueId: 0,
-    guaranteedRate: "60 Mbps",
+    guaranteedRate: "60 MB/s",
   },
   {
     id: "mmtc",

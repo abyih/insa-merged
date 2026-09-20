@@ -34,9 +34,9 @@ function formatBytes(bytes) {
 function formatRate(kbps) {
   const rate = Number(kbps);
   if (!kbps || isNaN(rate) || rate <= 0) return "0 KB/s";
-  if (rate >= 1000000) return (rate / 1000000).toFixed(1) + " GB/s";
-  if (rate >= 1000) return (rate / 1000).toFixed(1) + " MB/s";
-  return rate + " KB/s";
+  if (rate >= 1000000) return parseFloat((rate / 1000000).toFixed(1)) + " GB/s";
+  if (rate >= 1000) return parseFloat((rate / 1000).toFixed(1)) + " MB/s";
+  return parseFloat(rate.toFixed(1)) + " KB/s";
 }
 
 function getHostDisplayName(host) {

@@ -66,9 +66,9 @@ const PRESET_INTENTS = [
 function formatRate(kbps) {
   const rate = Number(kbps);
   if (!kbps || isNaN(rate) || rate <= 0) return "0 KB/s";
-  if (rate >= 1000000) return (rate / 1000000).toFixed(1) + " GB/s";
-  if (rate >= 1000) return (rate / 1000).toFixed(1) + " MB/s";
-  return rate + " KB/s";
+  if (rate >= 1000000) return parseFloat((rate / 1000000).toFixed(1)) + " GB/s";
+  if (rate >= 1000) return parseFloat((rate / 1000).toFixed(1)) + " MB/s";
+  return parseFloat(rate.toFixed(1)) + " KB/s";
 }
 
 export default function AiIntentPanel({
@@ -435,7 +435,7 @@ export default function AiIntentPanel({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, color: "var(--theme-text-muted, #a1a1aa)" }}>
             <span>
-              💡 <strong>Tip:</strong> Mention target hosts (e.g. 10.0.0.1, all hosts) and QoS/bandwidth (e.g. 50 Mbps).
+              💡 <strong>Tip:</strong> Mention target hosts (e.g. 10.0.0.1, all hosts) and QoS/bandwidth (e.g. 50 MB/s or 1500 KB/s).
             </span>
           </div>
 
