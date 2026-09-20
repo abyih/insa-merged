@@ -68,8 +68,8 @@ export default function GlobalAttackAlert() {
     return () => clearInterval(id);
   }, [poll]);
 
-  // Don't show overlay on the anomaly page itself (it has its own display)
-  const isAnomalyPage = location.pathname === "/anomaly";
+  // Don't show overlay on the anomaly or security page itself (it has its own display)
+  const isAnomalyPage = location.pathname.includes("anomaly") || location.pathname.startsWith("/security");
 
   // Handle dismiss — record the latest attack timestamp to only show again for newer attacks
   const handleDismiss = useCallback(() => {

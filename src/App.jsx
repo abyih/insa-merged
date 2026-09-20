@@ -20,7 +20,9 @@ import SlicingVerification from "./Pages/SlicingVerification";
 import NetworkSlices from "./Pages/NetworkSlices";
 import VmTopologyMap from "./Pages/VmTopologyMap";
 import PathTrace from "./Pages/PathTrace/PathTrace";
+import SecurityHub from "./Pages/Security/SecurityHub";
 import { NotificationProvider } from "./context/NotificationContext";
+import { SdnProvider } from "./pipeline/SdnContext";
 
 // ─── Top-level error boundary — shows the actual crash instead of white screen
 class AppErrorBoundary extends React.Component {
@@ -199,33 +201,47 @@ function TopologyRoute() {
 
 const App = () => (
   <AppErrorBoundary>
-    <NotificationProvider>
-      <Router>
-        <Layout>
-          <Routes>
-            <Route path="/"                    element={<Navigate to="/dashboard" replace />} />
-            <Route path="/login"               element={<Login />} />
-            <Route path="/dashboard"           element={<Dashboard />} />
-            <Route path="/nodes"               element={<AllNodes />} />
-            <Route path="/node/:nodeId/detail" element={<NodeConnector />} />
-            <Route path="/flows"               element={<Flows />} />
-            <Route path="/flow-manager"       element={<FlowManager />} />
-            <Route path="/stats"               element={<Stats />} />
-            <Route path="/topology"            element={<TopologyRoute />} />
-            <Route path="/cloud"               element={<Cloud />} />
-            <Route path="/network-slicing"     element={<NetworkSlicing />} />
-            <Route path="/slicing-verification" element={<SlicingVerification />} />
-            <Route path="/slices"              element={<NetworkSlices />} />
-            <Route path="/vm-topology"         element={<VmTopologyMap />} />
-            <Route path="/path-trace"          element={<PathTrace />} />
-            <Route path="/anomaly"             element={<AnomalyDetector />} />
-            <Route path="/api-tester"          element={<ApiTester />} />
-            <Route path="/yangui"              element={<Yangman />} />
-            <Route path="*"                    element={<div className="p-8 text-gray-400">Page not found</div>} />
-          </Routes>
-        </Layout>
-      </Router>
-    </NotificationProvider>
+    <SdnProvider>
+      <NotificationProvider>
+        <Router>
+          <Layout>
+            <Routes>
+              <Route path="/"                    element={<Navigate to="/dashboard" replace />} />
+              <Route path="/login"               element={<Login />} />
+              <Route path="/dashboard"           element={<Dashboard />} />
+              <Route path="/nodes"               element={<AllNodes />} />
+              <Route path="/node/:nodeId/detail" element={<NodeConnector />} />
+              <Route path="/flows"               element={<Flows />} />
+              <Route path="/flow-manager"       element={<FlowManager />} />
+              <Route path="/stats"               element={<Stats />} />
+              <Route path="/topology"            element={<TopologyRoute />} />
+              <Route path="/cloud"               element={<Cloud />} />
+              <Route path="/network-slicing"     element={<NetworkSlicing />} />
+              <Route path="/slicing-verification" element={<SlicingVerification />} />
+              <Route path="/slices"              element={<NetworkSlices />} />
+              <Route path="/vm-topology"         element={<VmTopologyMap />} />
+              <Route path="/path-trace"          element={<PathTrace />} />
+              
+              {/* Security Suite Routes */}
+              <Route path="/security"            element={<SecurityHub defaultTab="overview" />} />
+              <Route path="/security/overview"   element={<SecurityHub defaultTab="overview" />} />
+              <Route path="/security/anomaly"    element={<SecurityHub defaultTab="anomaly" />} />
+              <Route path="/security/linkguard"  element={<SecurityHub defaultTab="linkguard" />} />
+              <Route path="/security/tls"        element={<SecurityHub defaultTab="tls" />} />
+
+              {/* Backward compatibility aliases */}
+              <Route path="/anomaly"             element={<Navigate to="/security/anomaly" replace />} />
+              <Route path="/linkguard"           element={<Navigate to="/security/linkguard" replace />} />
+              <Route path="/tls"                 element={<Navigate to="/security/tls" replace />} />
+
+              <Route path="/api-tester"          element={<ApiTester />} />
+              <Route path="/yangui"              element={<Yangman />} />
+              <Route path="*"                    element={<div className="p-8 text-gray-400">Page not found</div>} />
+            </Routes>
+          </Layout>
+        </Router>
+      </NotificationProvider>
+    </SdnProvider>
   </AppErrorBoundary>
 );
 

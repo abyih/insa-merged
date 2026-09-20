@@ -140,6 +140,13 @@ export default defineConfig(({ mode }) => {
           timeout: 15000,
           proxyTimeout: 15000,
         },
+        "/api/security": {
+          target: "http://127.0.0.1:5000",
+          changeOrigin: true,
+          ws: true,
+          timeout: 15000,
+          proxyTimeout: 15000,
+        },
         "/api/login": {
           target: "http://127.0.0.1:5000",
           changeOrigin: true,
