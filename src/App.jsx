@@ -21,6 +21,7 @@ import NetworkSlices from "./Pages/NetworkSlices";
 import VmTopologyMap from "./Pages/VmTopologyMap";
 import PathTrace from "./Pages/PathTrace/PathTrace";
 import SecurityHub from "./Pages/Security/SecurityHub";
+import SlicingHub from "./Pages/Slicing/SlicingHub";
 import { NotificationProvider } from "./context/NotificationContext";
 import { SdnProvider } from "./pipeline/SdnContext";
 
@@ -216,12 +217,21 @@ const App = () => (
               <Route path="/stats"               element={<Stats />} />
               <Route path="/topology"            element={<TopologyRoute />} />
               <Route path="/cloud"               element={<Cloud />} />
-              <Route path="/network-slicing"     element={<NetworkSlicing />} />
-              <Route path="/slicing-verification" element={<SlicingVerification />} />
-              <Route path="/slices"              element={<NetworkSlices />} />
               <Route path="/vm-topology"         element={<VmTopologyMap />} />
               <Route path="/path-trace"          element={<PathTrace />} />
               
+              {/* Slicing Suite Routes */}
+              <Route path="/slicing"              element={<SlicingHub defaultTab="overview" />} />
+              <Route path="/slicing/overview"     element={<SlicingHub defaultTab="overview" />} />
+              <Route path="/slicing/onos"         element={<SlicingHub defaultTab="onos" />} />
+              <Route path="/slicing/openstack"    element={<SlicingHub defaultTab="openstack" />} />
+              <Route path="/slicing/verification" element={<SlicingHub defaultTab="verification" />} />
+
+              {/* Slicing Backward Compatibility Aliases */}
+              <Route path="/network-slicing"      element={<Navigate to="/slicing/onos" replace />} />
+              <Route path="/slices"               element={<Navigate to="/slicing/openstack" replace />} />
+              <Route path="/slicing-verification" element={<Navigate to="/slicing/verification" replace />} />
+
               {/* Security Suite Routes */}
               <Route path="/security"            element={<SecurityHub defaultTab="overview" />} />
               <Route path="/security/overview"   element={<SecurityHub defaultTab="overview" />} />
@@ -229,7 +239,7 @@ const App = () => (
               <Route path="/security/linkguard"  element={<SecurityHub defaultTab="linkguard" />} />
               <Route path="/security/tls"        element={<SecurityHub defaultTab="tls" />} />
 
-              {/* Backward compatibility aliases */}
+              {/* Security Backward Compatibility Aliases */}
               <Route path="/anomaly"             element={<Navigate to="/security/anomaly" replace />} />
               <Route path="/linkguard"           element={<Navigate to="/security/linkguard" replace />} />
               <Route path="/tls"                 element={<Navigate to="/security/tls" replace />} />

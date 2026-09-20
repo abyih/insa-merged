@@ -32,6 +32,10 @@ function Header() {
   const [mobileSecurityOpen, setMobileSecurityOpen] = useState(false);
   const dropdownRef = useRef(null);
 
+  const [slicingDropdownOpen, setSlicingDropdownOpen] = useState(false);
+  const [mobileSlicingOpen, setMobileSlicingOpen] = useState(false);
+  const slicingDropdownRef = useRef(null);
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return document.documentElement.classList.contains("dark");
   });
@@ -44,6 +48,9 @@ function Header() {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setSecurityDropdownOpen(false);
       }
+      if (slicingDropdownRef.current && !slicingDropdownRef.current.contains(event.target)) {
+        setSlicingDropdownOpen(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -52,6 +59,7 @@ function Header() {
   // Close dropdown on route change
   useEffect(() => {
     setSecurityDropdownOpen(false);
+    setSlicingDropdownOpen(false);
     setMenuOpen(false);
   }, [location.pathname]);
 
@@ -84,6 +92,12 @@ function Header() {
     location.pathname === "/linkguard" ||
     location.pathname === "/tls";
 
+  const isSlicingActive =
+    location.pathname.startsWith("/slicing") ||
+    location.pathname === "/network-slicing" ||
+    location.pathname === "/slices" ||
+    location.pathname === "/slicing-verification";
+
   const securityItems = [
     {
       label: "Security Overview",
@@ -111,16 +125,42 @@ function Header() {
     },
   ];
 
+  const slicingItems = [
+    {
+      label: "Slicing Overview",
+      icon: <Layers className="w-3.5 h-3.5 text-indigo-400" />,
+      to: "/slicing",
+      desc: "Dual-domain slice telemetry & comparison",
+    },
+    {
+      label: "ONOS Data-Plane Slicing",
+      icon: <Network className="w-3.5 h-3.5 text-cyan-400" />,
+      to: "/slicing/onos",
+      desc: "Host-based slicing, meters & AI intents",
+    },
+    {
+      label: "OpenStack Cloud Slices",
+      icon: <Cloud className="w-3.5 h-3.5 text-purple-400" />,
+      to: "/slicing/openstack",
+      desc: "Cloud VM slicing, Neutron & OVS QoS",
+    },
+    {
+      label: "Verification & Live Tests",
+      icon: <Activity className="w-3.5 h-3.5 text-emerald-400" />,
+      to: "/slicing/verification",
+      desc: "Ping RTT, iperf saturation & DSCP audits",
+    },
+  ];
+
   const navItems = [
     { label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" />, to: "/dashboard" },
     { label: "Topology", icon: <Network className="w-4 h-4" />, to: "/topology" },
     { label: "Devices", icon: <Cpu className="w-4 h-4" />, to: "/nodes" },
     { label: "Flows", icon: <GitBranch className="w-4 h-4" />, to: "/flows" },
     { label: "Path Trace", icon: <Route className="w-4 h-4" />, to: "/path-trace" },
-    { label: "Security", icon: <Shield className="w-4 h-4" />, isDropdown: true },
+    { label: "Security", icon: <Shield className="w-4 h-4" />, isDropdown: true, type: "security" },
+    { label: "Slicing", icon: <Layers className="w-4 h-4" />, isDropdown: true, type: "slicing" },
     { label: "Cloud", icon: <Cloud className="w-4 h-4" />, to: "/cloud" },
-    { label: "ONOS Slicing", icon: <Layers className="w-4 h-4" />, to: "/network-slicing" },
-    { label: "OS Slices", icon: <Layers className="w-4 h-4" />, to: "/slices" },
     { label: "VM Map", icon: <Network className="w-4 h-4" />, to: "/vm-topology" },
     { label: "Stats", icon: <Activity className="w-4 h-4" />, to: "/stats" },
     { label: "Tools", icon: <Wrench className="w-4 h-4" />, to: "/api-tester" },
@@ -154,12 +194,15 @@ function Header() {
         {!isLoginPage && (
           <nav className="hidden xl:flex items-center gap-1.5 text-sm mr-2">
             {navItems.map((item) => {
-              if (item.isDropdown) {
+              if (item.isDropdown && item.type === "security") {
                 return (
                   <div key="security-dropdown" className="relative" ref={dropdownRef}>
                     <button
                       type="button"
-                      onClick={() => setSecurityDropdownOpen(!securityDropdownOpen)}
+                      onClick={() => {
+                        setSecurityDropdownOpen(!securityDropdownOpen);
+                        setSlicingDropdownOpen(false);
+                      }}
                       className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer ${
                         isSecurityActive
                           ? "bg-zinc-800 text-zinc-50 border border-zinc-700/50 shadow-inner"
@@ -191,6 +234,70 @@ function Header() {
                               key={sub.label}
                               to={sub.to}
                               onClick={() => setSecurityDropdownOpen(false)}
+                              className={`flex items-start gap-3 p-2.5 rounded-xl text-xs transition-all duration-150 ${
+                                isSubActive
+                                  ? "bg-zinc-850 text-white font-medium shadow-inner"
+                                  : "text-zinc-300 hover:bg-zinc-900 hover:text-white"
+                              }`}
+                            >
+                              <div className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 mt-0.5">
+                                {sub.icon}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-zinc-100">{sub.label}</span>
+                                <span className="text-[11px] text-zinc-400 leading-tight mt-0.5">
+                                  {sub.desc}
+                                </span>
+                              </div>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              if (item.isDropdown && item.type === "slicing") {
+                return (
+                  <div key="slicing-dropdown" className="relative" ref={slicingDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSlicingDropdownOpen(!slicingDropdownOpen);
+                        setSecurityDropdownOpen(false);
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer ${
+                        isSlicingActive
+                          ? "bg-zinc-800 text-zinc-50 border border-zinc-700/50 shadow-inner"
+                          : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60"
+                      }`}
+                    >
+                      {item.icon}
+                      <span>{item.label}</span>
+                      <ChevronDown
+                        className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${
+                          slicingDropdownOpen ? "rotate-180 text-zinc-100" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {slicingDropdownOpen && (
+                      <div className="absolute top-full left-0 mt-2 w-72 bg-zinc-950/95 border border-zinc-800 rounded-2xl shadow-2xl backdrop-blur-2xl p-2 z-50 flex flex-col gap-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                        <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-zinc-500 tracking-wider">
+                          Network Slicing Domains
+                        </div>
+                        {slicingItems.map((sub) => {
+                          const isSubActive =
+                            location.pathname === sub.to ||
+                            (sub.to === "/slicing/onos" && location.pathname === "/network-slicing") ||
+                            (sub.to === "/slicing/openstack" && location.pathname === "/slices") ||
+                            (sub.to === "/slicing/verification" && location.pathname === "/slicing-verification");
+                          return (
+                            <Link
+                              key={sub.label}
+                              to={sub.to}
+                              onClick={() => setSlicingDropdownOpen(false)}
                               className={`flex items-start gap-3 p-2.5 rounded-xl text-xs transition-all duration-150 ${
                                 isSubActive
                                   ? "bg-zinc-850 text-white font-medium shadow-inner"
@@ -294,7 +401,7 @@ function Header() {
         <div className="absolute top-20 left-0 right-0 bg-zinc-950/95 border-b border-zinc-800 xl:hidden backdrop-blur-xl animate-in fade-in slide-in-from-top-5 duration-200 shadow-2xl">
           <nav className="flex flex-col px-6 py-6 gap-2 text-sm max-h-[80vh] overflow-y-auto">
             {navItems.map((item) => {
-              if (item.isDropdown) {
+              if (item.isDropdown && item.type === "security") {
                 return (
                   <div key="mobile-security-dropdown" className="flex flex-col">
                     <button
@@ -325,6 +432,59 @@ function Header() {
                             (sub.to === "/security/anomaly" && location.pathname === "/anomaly") ||
                             (sub.to === "/security/linkguard" && location.pathname === "/linkguard") ||
                             (sub.to === "/security/tls" && location.pathname === "/tls");
+                          return (
+                            <Link
+                              key={sub.label}
+                              to={sub.to}
+                              onClick={() => setMenuOpen(false)}
+                              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                                isSubActive
+                                  ? "bg-zinc-800 text-zinc-50 font-bold"
+                                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+                              }`}
+                            >
+                              {sub.icon}
+                              <span>{sub.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              if (item.isDropdown && item.type === "slicing") {
+                return (
+                  <div key="mobile-slicing-dropdown" className="flex flex-col">
+                    <button
+                      type="button"
+                      onClick={() => setMobileSlicingOpen(!mobileSlicingOpen)}
+                      className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                        isSlicingActive
+                          ? "bg-zinc-800 text-zinc-50 border border-zinc-700/50"
+                          : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform duration-200 ${
+                          mobileSlicingOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {mobileSlicingOpen && (
+                      <div className="pl-4 pr-2 py-1 flex flex-col gap-1.5 mt-1 border-l-2 border-zinc-800 ml-4">
+                        {slicingItems.map((sub) => {
+                          const isSubActive =
+                            location.pathname === sub.to ||
+                            (sub.to === "/slicing/onos" && location.pathname === "/network-slicing") ||
+                            (sub.to === "/slicing/openstack" && location.pathname === "/slices") ||
+                            (sub.to === "/slicing/verification" && location.pathname === "/slicing-verification");
                           return (
                             <Link
                               key={sub.label}
