@@ -6,8 +6,6 @@ const links = [
 	{ title: "Nodes", link: "/nodes" },
 	{ title: "Topology", link: "/topology" },
 	{ title: "Flows", link: "/flows" },
-	{ title: "Flow Manager", link: "/flow-manager" },
-	{ title: "Path Trace", link: "/path-trace" },
 	{ title: "Security Hub", link: "/security" },
 	{ title: "↳ Anomaly Detector", link: "/security/anomaly" },
 	{ title: "↳ Link Guard", link: "/security/linkguard" },

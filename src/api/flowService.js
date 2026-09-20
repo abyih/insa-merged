@@ -2,6 +2,7 @@ import {
   getNodes as fetchInventoryNodes,
   getNodeTables as fetchNodeTables,
   getFlows as fetchNodeFlows,
+  getConfigFlows as fetchConfigFlows,
   deleteFlow as removeFlow,
   updateFlow as putNodeFlow,
   installFlow as postNodeFlow,
@@ -76,6 +77,24 @@ export async function getNodeTables(nodeId) {
 }
 
 export async function getFlows(nodeId, tableId) {
+  try {
+    const flows = await fetchNodeFlows(nodeId, tableId);
+    return flows || [];
+  } catch (error) {
+    return [];
+  }
+}
+
+export async function getConfigFlows(nodeId, tableId) {
+  try {
+    const flows = await fetchConfigFlows(nodeId, tableId);
+    return flows || [];
+  } catch (error) {
+    return [];
+  }
+}
+
+export async function getOperationalFlows(nodeId, tableId) {
   try {
     const flows = await fetchNodeFlows(nodeId, tableId);
     return flows || [];

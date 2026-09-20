@@ -375,7 +375,36 @@ export async function getAllFlows(nodeId) {
 	}
 }
 
+export async function getConfigFlows(nodeId, tableId = 0) {
+	const cType = await detectController();
+	if (cType === "onos") {
+		try {
+			const res = await onosApi.get(`/flows/${encodeURIComponent(nodeId)}`);
+			return res.data?.flows || [];
+		} catch (err) {
+			handleError(err);
+		}
+	}
+	try {
+		const res = await odlApi.get(
+			`opendaylight-inventory:nodes/node=${encodeURIComponent(nodeId)}/flow-node-inventory:table=${tableId}?content=config`
+		);
+		return res.data;
+	} catch (err) {
+		return { "flow-node-inventory:table": [{ id: tableId, flow: [] }] };
+	}
+}
+
 export async function installFlow(nodeId, tableId, flowId, flowData) {
+	const cType = await detectController();
+	if (cType === "onos") {
+		try {
+			const res = await onosApi.post(`/flows/${encodeURIComponent(nodeId)}`, flowData);
+			return res.data;
+		} catch (err) {
+			handleError(err);
+		}
+	}
 	try {
 		const res = await odlApi.put(
 			`opendaylight-inventory:nodes/node=${encodeURIComponent(nodeId)}/flow-node-inventory:table=${tableId}/flow-node-inventory:flow=${flowId}`,
@@ -409,14 +438,23 @@ export async function updateFlow(nodeId, tableId, flowId, data) {
 }
 
 export async function deleteFlow(nodeId, tableId, flowId) {
-  try {
-    const res = await odlApi.delete(
-      `opendaylight-inventory:nodes/node=${encodeURIComponent(nodeId)}/flow-node-inventory:table=${encodeURIComponent(tableId)}/flow-node-inventory:flow=${encodeURIComponent(flowId)}`
-    );
-    return res.data;
-  } catch (err) {
-    handleError(err);
-  }
+	const cType = await detectController();
+	if (cType === "onos") {
+		try {
+			const res = await onosApi.delete(`/flows/${encodeURIComponent(nodeId)}/${encodeURIComponent(flowId)}`);
+			return res.data;
+		} catch (err) {
+			handleError(err);
+		}
+	}
+	try {
+		const res = await odlApi.delete(
+			`opendaylight-inventory:nodes/node=${encodeURIComponent(nodeId)}/flow-node-inventory:table=${encodeURIComponent(tableId)}/flow-node-inventory:flow=${encodeURIComponent(flowId)}`
+		);
+		return res.data;
+	} catch (err) {
+		handleError(err);
+	}
 }
 
 // ==== Statistics ====

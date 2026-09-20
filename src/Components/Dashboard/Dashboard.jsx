@@ -158,14 +158,7 @@ function Dashboard() {
         ];
   }, [flowStats]);
 
-  // Flow table rows
-  const flowTableRows = flowStats.slice(0, 15).map((f) => ({
-    id: f.flow_id,
-    device: f.switch_id,
-    packetCount: f.packet_count,
-    byteCount: f.byte_count,
-    duration: f.duration,
-  }));
+
 
   const [bandwidthData, setBandwidthData] = useState(() =>
     [4, 3, 2, 1, 0].map(makeBandwidthPoint)
@@ -742,62 +735,7 @@ function Dashboard() {
         </ChartCard>
       </div>
 
-      {/* Active Flow Table */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-zinc-800">
-          <div>
-            <h3 className="text-lg font-bold text-zinc-200">Active Flow Table</h3>
-            <p className="text-xs text-zinc-500 mt-1">
-              Snapshot of top active controller flow entries
-            </p>
-          </div>
-          <span className="text-[10px] font-bold text-zinc-400 bg-zinc-800 border border-zinc-700 px-2 py-1 rounded">
-            pipeline data
-          </span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-zinc-950 border-b border-zinc-800 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
-                <th className="px-6 py-3.5">Flow ID</th>
-                <th className="px-6 py-3.5">Switch / Node</th>
-                <th className="px-6 py-3.5">Packets</th>
-                <th className="px-6 py-3.5">Bytes</th>
-                <th className="px-6 py-3.5">Duration</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/40 text-sm text-zinc-300">
-              {flowTableRows.map((f, i) => (
-                <tr key={i} className="hover:bg-zinc-800/30 transition-colors">
-                  <td className="px-6 py-3.5 font-medium text-zinc-100">
-                    {f.id}
-                  </td>
-                  <td className="px-6 py-3.5 font-mono text-xs text-zinc-400">
-                    {f.device}
-                  </td>
-                  <td className="px-6 py-3.5">
-                    {f.packetCount.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-3.5 font-mono text-xs">
-                    {f.byteCount.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-3.5">{f.duration}</td>
-                </tr>
-              ))}
-              {flowTableRows.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="text-center py-12 text-zinc-500 font-medium"
-                  >
-                    No active OpenFlow rules found in current nodes
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+
 
       {/* FAQ */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg p-8 mt-8">

@@ -14,7 +14,6 @@ import {
   X,
   LogOut,
   FileCode,
-  Route,
   Sun,
   Moon,
   Bell,
@@ -157,7 +156,6 @@ function Header() {
     { label: "Topology", icon: <Network className="w-4 h-4" />, to: "/topology" },
     { label: "Devices", icon: <Cpu className="w-4 h-4" />, to: "/nodes" },
     { label: "Flows", icon: <GitBranch className="w-4 h-4" />, to: "/flows" },
-    { label: "Path Trace", icon: <Route className="w-4 h-4" />, to: "/path-trace" },
     { label: "Security", icon: <Shield className="w-4 h-4" />, isDropdown: true, type: "security" },
     { label: "Slicing", icon: <Layers className="w-4 h-4" />, isDropdown: true, type: "slicing" },
     { label: "Cloud", icon: <Cloud className="w-4 h-4" />, to: "/cloud" },
@@ -169,7 +167,7 @@ function Header() {
   return (
     <header className="fixed top-0 left-0 right-0 h-20 px-6 flex items-center justify-between z-50 backdrop-blur-md bg-zinc-950/75 border-b border-zinc-800/80 shadow-lg shadow-black/20">
       {/* Logo and title */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 shrink-0">
         <div className="relative group">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-cyan-500 rounded-full blur opacity-40 group-hover:opacity-75 transition duration-500"></div>
           <img
@@ -188,11 +186,9 @@ function Header() {
         </div>
       </div>
 
-      {/* Controls container (desktop nav + toggles) */}
-      <div className="flex items-center gap-3">
-        {/* Desktop Navigation */}
-        {!isLoginPage && (
-          <nav className="hidden xl:flex items-center gap-1.5 text-sm mr-2">
+      {/* Center: Desktop Navigation */}
+      {!isLoginPage && (
+        <nav className="hidden xl:flex items-center justify-center gap-1.5 text-sm flex-1 mx-6">
             {navItems.map((item) => {
               if (item.isDropdown && item.type === "security") {
                 return (
@@ -341,8 +337,10 @@ function Header() {
           </nav>
         )}
 
-        {/* Notifications Bell */}
-        {!isLoginPage && (
+        {/* Right side controls: Notifications, Theme, Logout, Mobile toggle */}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Notifications Bell */}
+          {!isLoginPage && (
           <button
             onClick={() => setIsDrawerOpen(!isDrawerOpen)}
             className="relative p-2 rounded-lg border border-zinc-850 hover:bg-zinc-900 text-zinc-450 hover:text-zinc-100 transition-all duration-200 focus:outline-none"
