@@ -11,10 +11,25 @@ const execAsync = promisify(exec);
 const BRIDGE = "br-int";
 const TABLE = 250;
 
-async function runOfctl(args) {
-  const cmd = `sudo ovs-ofctl -O OpenFlow13 ${args}`;
+let sudoAvailable = null;
+async function isSudoPasswordless() {
+  if (sudoAvailable !== null) return sudoAvailable;
   try {
-    const { stdout, stderr } = await execAsync(cmd);
+    await execAsync("sudo -n true", { timeout: 500 });
+    sudoAvailable = true;
+  } catch {
+    sudoAvailable = false;
+  }
+  return sudoAvailable;
+}
+
+async function runOfctl(args) {
+  if (!(await isSudoPasswordless())) {
+    return { success: false, error: "Passwordless sudo unavailable on host", skipped: true };
+  }
+  const cmd = `sudo -n ovs-ofctl -O OpenFlow13 ${args}`;
+  try {
+    const { stdout, stderr } = await execAsync(cmd, { timeout: 2000 });
     return { success: true, stdout: stdout.trim(), stderr: stderr.trim(), cmd };
   } catch (err) {
     return { success: false, error: err.message, cmd };
@@ -65,9 +80,12 @@ async function dumpTable250() {
 }
 
 async function runVsctl(args) {
-  const cmd = `sudo ovs-vsctl ${args}`;
+  if (!(await isSudoPasswordless())) {
+    return { success: false, error: "Passwordless sudo unavailable on host", skipped: true };
+  }
+  const cmd = `sudo -n ovs-vsctl ${args}`;
   try {
-    const { stdout, stderr } = await execAsync(cmd);
+    const { stdout, stderr } = await execAsync(cmd, { timeout: 2000 });
     return { success: true, stdout: stdout.trim(), stderr: stderr.trim(), cmd };
   } catch (err) {
     return { success: false, error: err.message, cmd };
@@ -107,9 +125,12 @@ async function enforceMinBandwidthDirect(ovsInterfaceName, minRateKbps, maxRateK
 }
 
 async function runTc(args) {
-  const cmd = `sudo tc ${args}`;
+  if (!(await isSudoPasswordless())) {
+    return { success: false, error: "Passwordless sudo unavailable on host", skipped: true };
+  }
+  const cmd = `sudo -n tc ${args}`;
   try {
-    const { stdout, stderr } = await execAsync(cmd);
+    const { stdout, stderr } = await execAsync(cmd, { timeout: 2000 });
     return { success: true, stdout: stdout.trim(), stderr: stderr.trim(), cmd };
   } catch (err) {
     return { success: false, error: err.message, cmd };
