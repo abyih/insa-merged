@@ -304,49 +304,49 @@ export default defineConfig({
 					});
 				}
 			},
-			// Dedicated ONOS Slices, Capacity & Verification Backend (server-onos.js on port 5051)
+			// Dedicated ONOS Slices, Capacity & Verification Backend (server.js on port 5050)
 			"/api/onos/slices": {
-				target: "http://127.0.0.1:5051",
+				target: "http://127.0.0.1:5050",
 				changeOrigin: true,
 				timeout: 10000,
 				proxyTimeout: 10000,
 			},
 			"/api/onos/intent": {
-				target: "http://127.0.0.1:5051",
+				target: "http://127.0.0.1:5050",
 				changeOrigin: true,
 				timeout: 10000,
 				proxyTimeout: 10000,
 			},
 			"/api/onos/qos": {
-				target: "http://127.0.0.1:5051",
+				target: "http://127.0.0.1:5050",
 				changeOrigin: true,
 				timeout: 10000,
 				proxyTimeout: 10000,
 			},
 			"/api/onos/summary": {
-				target: "http://127.0.0.1:5051",
+				target: "http://127.0.0.1:5050",
 				changeOrigin: true,
 				timeout: 10000,
 				proxyTimeout: 10000,
 			},
 			// Live verification test endpoints (ping, iperf, queue stats, DSCP check)
 			"/api/onos/verify": {
-				target: "http://127.0.0.1:5051",
+				target: "http://127.0.0.1:5050",
 				changeOrigin: true,
 				timeout: 30000,
 				proxyTimeout: 30000,
 			},
-			// Dedicated ONOS & Mininet QoS backend (server-onos.js on port 5051)
+			// Dedicated ONOS & Mininet QoS backend (server.js on port 5050)
 			"/api/onos-service": {
-				target: "http://127.0.0.1:5051",
+				target: "http://127.0.0.1:5050",
 				changeOrigin: true,
 				rewrite: (path) => path.replace(/^\/api\/onos-service/, "/api/onos"),
 				timeout: 10000,
 				proxyTimeout: 10000,
 			},
-			// LinkGuard Security Telemetry & Control (server-onos.js on port 5051)
+			// LinkGuard Security Telemetry & Control (server.js on port 5050)
 			"/api/security": {
-				target: "http://127.0.0.1:5051",
+				target: "http://127.0.0.1:5050",
 				changeOrigin: true,
 				timeout: 10000,
 				proxyTimeout: 10000,

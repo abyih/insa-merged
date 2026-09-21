@@ -1669,6 +1669,8 @@ import { promisify } from "util";
 import https from "node:https";
 import fs from "node:fs";
 import { DSCP_LOW_LATENCY, QUEUE_LOW_LATENCY } from "./src/utils/qosConstants.js";
+import onosRouter from "./src/server/onosRouter.js";
+import linkguardRouter from "./linkguard.js";
 
 const pExecFile = promisify(execFile);
 const app = express();
@@ -1721,6 +1723,11 @@ let tokenCache = {
 // =========================================================
 app.use(cors());
 app.use(bodyParser.json());
+
+/* Modular ONOS & Security Routers */
+app.use("/api/onos", onosRouter);
+app.use("/api/onos-service", onosRouter);
+app.use("/api/security", linkguardRouter);
 
 /* =========================================================
    TLS STATUS — genuine handshake introspection, not a config echo.
