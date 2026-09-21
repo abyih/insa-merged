@@ -3,3 +3,12 @@ dist/
 .vscode/
 .env
 *.log
+package-lock.json
+sdn-certs/
+*.pem
+*.key
+*.csr
+*.crt
+*.srl
+*.jks
+*.p12

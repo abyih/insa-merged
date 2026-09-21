@@ -1929,20 +1929,25 @@ dotenv.config();
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
-import { execFile } from "child_process";
-import { Server } from "socket.io";
+import { execFile, exec } from "child_process";
+import fs from "fs";
+import path from "path";
+import os from "os";
 import http from "http";
-import axios from "axios";
-import linkguardRouter, { startPolling } from './linkguard.js';
+import { Server } from "socket.io";
+
+import linkguardRouter, { startPolling, onosClient } from "./linkguard.js";
+import { updateOdlTlsConfig, updateOnosTlsConfig } from "./tlsOrchestrator.js";
+import { registerDigestJobs } from "./digest.js";
 
 const app = express();
 const server = http.createServer(app);
 
 // Initialize Socket.io with CORS matching frontend
 const io = new Server(server, {
-  cors: { origin: "http://localhost:5173" }
+  cors: { origin: "http://localhost:5173" },
 });
-const port = 5000;
+const port = process.env.PORT || 5000;
 
 const KEYSTONE_URL = process.env.KEYSTONE_URL;
 let NEUTRON_URL = process.env.NEUTRON_URL;
@@ -1963,20 +1968,20 @@ let tokenCache = {
 app.use(
   cors({
     origin: "http://localhost:5173",
-    methods: "GET,POST",
+    methods: "GET,POST,PUT,DELETE",
     allowedHeaders: "Content-Type, Authorization",
   })
 );
 
 app.use(bodyParser.json());
 
-// Attach Socket.io instance to app so routers can emit events if needed
-app.set('io', io);
+// Attach Socket.io instance to app so routers can emit events
+app.set("io", io);
 
 // Mount LinkGuard Security Routes
-app.use('/api/security', linkguardRouter);
+app.use("/api/security", linkguardRouter);
 
-// Insa-dluxf original node endpoint
+// Original node inventory endpoint
 app.get("/api/nodes", (req, res) => {
   res.json({
     nodes: [
@@ -1987,12 +1992,21 @@ app.get("/api/nodes", (req, res) => {
 });
 
 /* =========================
-   HELPER: NORMALIZE PROTOCOL
+   HELPERS
    ========================= */
 const normalizeProtocol = (protocol) => {
   if (!protocol) return "icmp";
   return protocol.toLowerCase();
 };
+
+function resolvePortablePath(rawPath) {
+  if (!rawPath) return "";
+  const systemUser = process.env.VM_USER || os.userInfo().username;
+  return rawPath
+    .replace(/\${VM_USER}/g, systemUser)
+    .replace(/\$VM_USER/g, systemUser)
+    .replace(/^~/, os.homedir());
+}
 
 /* =========================
    TOKEN MANAGEMENT
@@ -2003,80 +2017,87 @@ const getToken = async () => {
     return tokenCache.token;
   }
 
-  const response = await fetch(`${KEYSTONE_URL}/auth/tokens`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      auth: {
-        identity: {
-          methods: ["password"],
-          password: {
-            user: {
-              name: OS_USERNAME,
-              password: OS_PASSWORD,
-              domain: { name: OS_USER_DOMAIN_NAME },
+  try {
+    const response = await fetch(`${KEYSTONE_URL}/auth/tokens`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        auth: {
+          identity: {
+            methods: ["password"],
+            password: {
+              user: {
+                name: OS_USERNAME,
+                password: OS_PASSWORD,
+                domain: { name: OS_USER_DOMAIN_NAME },
+              },
+            },
+          },
+          scope: {
+            project: {
+              name: OS_PROJECT_NAME,
+              domain: { name: OS_PROJECT_DOMAIN_NAME },
             },
           },
         },
-        scope: {
-          project: {
-            name: OS_PROJECT_NAME,
-            domain: { name: OS_PROJECT_DOMAIN_NAME },
-          },
-        },
-      },
-    }),
-  });
+      }),
+    });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Keystone token request failed ${response.status}: ${text}`);
-  }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Keystone token request failed ${response.status}: ${text}`);
+    }
 
-  const token = response.headers.get("x-subject-token");
-  const payload = await response.json();
-  const expiresAt = Date.parse(payload.token.expires_at);
+    const token = response.headers.get("x-subject-token");
+    const payload = await response.json();
+    const expiresAt = Date.parse(payload.token.expires_at);
 
-  // -- DYNAMIC SERVICE DISCOVERY (LEARNING PHASE) --
-  const catalog = payload.token.catalog;
-  if (catalog) {
-    const keystoneUrlObj = new URL(KEYSTONE_URL);
-    const keystoneHost = keystoneUrlObj.hostname;
-    const isLocalKeystone = keystoneHost === '127.0.0.1' || keystoneHost === 'localhost';
+    // Dynamic service discovery
+    const catalog = payload.token.catalog;
+    if (catalog) {
+      const keystoneUrlObj = new URL(KEYSTONE_URL);
+      const keystoneHost = keystoneUrlObj.hostname;
+      const isLocalKeystone = keystoneHost === "127.0.0.1" || keystoneHost === "localhost";
 
-    const getUrl = (type) => {
-      const service = catalog.find((s) => s.type === type);
-      if (service && service.endpoints && service.endpoints.length > 0) {
-        const endpoint = service.endpoints.find((e) => e.interface === "public") || service.endpoints[0];
-        let serviceUrl = endpoint.url;
+      const getUrl = (type) => {
+        const service = catalog.find((s) => s.type === type);
+        if (service && service.endpoints && service.endpoints.length > 0) {
+          const endpoint =
+            service.endpoints.find((e) => e.interface === "public") || service.endpoints[0];
+          let serviceUrl = endpoint.url;
 
-        if (isLocalKeystone) {
-          try {
-            const urlObj = new URL(serviceUrl);
-            urlObj.hostname = keystoneHost;
-            serviceUrl = urlObj.toString();
-          } catch (e) {}
+          if (isLocalKeystone) {
+            try {
+              const urlObj = new URL(serviceUrl);
+              urlObj.hostname = keystoneHost;
+              serviceUrl = urlObj.toString();
+            } catch (e) {}
+          }
+          return serviceUrl;
         }
-        return serviceUrl;
-      }
-      return null;
-    };
+        return null;
+      };
 
-    let nova = getUrl("compute");
-    if (nova) NOVA_URL = nova;
+      let nova = getUrl("compute");
+      if (nova) NOVA_URL = nova;
 
-    let neutron = getUrl("network");
-    if (neutron) NEUTRON_URL = neutron.includes("/v2.0") ? neutron : `${neutron.replace(/\/$/, '')}/v2.0`;
+      let neutron = getUrl("network");
+      if (neutron)
+        NEUTRON_URL = neutron.includes("/v2.0") ? neutron : `${neutron.replace(/\/$/, "")}/v2.0`;
 
-    let glance = getUrl("image");
-    if (glance) GLANCE_URL = glance.includes("/v2") ? glance : `${glance.replace(/\/$/, '')}/v2`;
+      let glance = getUrl("image");
+      if (glance) GLANCE_URL = glance.includes("/v2") ? glance : `${glance.replace(/\/$/, "")}/v2`;
+    }
+
+    tokenCache = { token, expiresAt };
+    return token;
+  } catch (err) {
+    console.warn("OpenStack Keystone discovery skipped/unreachable:", err.message);
+    return null;
   }
-
-  tokenCache = { token, expiresAt };
-  return token;
 };
 
 const osFetch = async (url, options = {}) => {
@@ -2099,41 +2120,6 @@ const osJson = async (url, options = {}) => {
 };
 
 /* =========================
-   OPENSTACK HELPERS
-   ========================= */
-async function findServerByName(name) {
-  const data = await osJson(`${NOVA_URL}/servers?name=${encodeURIComponent(name)}`);
-  const servers = data.servers || [];
-  if (servers.length === 0) {
-    throw new Error(`Server not found: ${name}`);
-  }
-  const detail = await osJson(`${NOVA_URL}/servers/${servers[0].id}`);
-  return detail.server;
-}
-
-async function findNetwork(nameOrId) {
-  const data = await osJson(
-    `${NEUTRON_URL}/networks?name=${encodeURIComponent(nameOrId)}`
-  );
-  const networks = data.networks || [];
-  if (networks.length === 0) {
-    throw new Error(`Network not found: ${nameOrId}`);
-  }
-  const net = networks[0];
-  if (net.subnets && net.subnets.length > 0) {
-    try {
-      const subnetData = await osJson(`${NEUTRON_URL}/subnets/${net.subnets[0]}`);
-      net.cidr = subnetData.subnet?.cidr || "0.0.0.0/0";
-    } catch (_) {
-      net.cidr = "0.0.0.0/0";
-    }
-  } else {
-    net.cidr = "0.0.0.0/0";
-  }
-  return net;
-}
-
-/* =========================
    OPENSTACK CLOUD SUMMARY
    ========================= */
 app.get("/api/openstack/cloud-summary", async (req, res) => {
@@ -2154,7 +2140,7 @@ app.get("/api/openstack/cloud-summary", async (req, res) => {
     try {
       const subnetData = await osJson(`${NEUTRON_URL}/subnets`);
       subnets = subnetData.subnets || [];
-    } catch (_) { }
+    } catch (_) {}
 
     const subnetMap = {};
     subnets.forEach((s) => {
@@ -2173,9 +2159,9 @@ app.get("/api/openstack/cloud-summary", async (req, res) => {
     const virtualMachines = servers.map((server) => {
       const port = portByServer[server.id];
       const fixedIp = port?.fixed_ips?.[0];
-      const ipAddr = fixedIp?.ip_address || Object.values(server.addresses || {})?.[0]?.[0]?.addr || "N/A";
+      const ipAddr =
+        fixedIp?.ip_address || Object.values(server.addresses || {})?.[0]?.[0]?.addr || "N/A";
       const networkName = Object.keys(server.addresses || {})?.[0] || port?.network_id || "N/A";
-      const subnetInfo = fixedIp ? subnetMap[fixedIp.subnet_id] : null;
 
       return {
         id: server.id,
@@ -2194,10 +2180,18 @@ app.get("/api/openstack/cloud-summary", async (req, res) => {
     );
 
     const stats = [
-      { title: "Active Instances", value: servers.filter((s) => s.status === "ACTIVE").length, icon: "🖥️" },
+      {
+        title: "Active Instances",
+        value: servers.filter((s) => s.status === "ACTIVE").length,
+        icon: "🖥️",
+      },
       { title: "OVN Logical Switches", value: networks.length, icon: "🌐" },
       { title: "Routers", value: routers.length, icon: "📡" },
-      { title: "VXLAN/Geneve Tunnels", value: tunnelNetworks.length || networks.length, icon: "🔗" },
+      {
+        title: "VXLAN/Geneve Tunnels",
+        value: tunnelNetworks.length || networks.length,
+        icon: "🔗",
+      },
     ];
 
     const ovnNetworks = networks.map((net) => {
@@ -2228,7 +2222,7 @@ app.get("/api/openstack/cloud-summary", async (req, res) => {
         direction: r.direction,
         action: "ALLOW",
       }));
-    } catch (_) { }
+    } catch (_) {}
 
     res.json({
       stats,
@@ -2241,7 +2235,6 @@ app.get("/api/openstack/cloud-summary", async (req, res) => {
       infrastructureStatus,
     });
   } catch (error) {
-    console.error("Cloud summary error:", error.message);
     res.status(500).json({
       error: "OpenStack unreachable",
       details: error.message,
@@ -2251,198 +2244,6 @@ app.get("/api/openstack/cloud-summary", async (req, res) => {
       flows: [],
       securityRules: [],
     });
-  }
-});
-
-/* =========================
-   VM CONSOLE ACCESS (noVNC)
-   ========================= */
-app.get("/api/openstack/console/:serverId", async (req, res) => {
-  const { serverId } = req.params;
-  if (!serverId) {
-    return res.status(400).json({ error: "Server ID is required." });
-  }
-
-  try {
-    // 1. Try modern Nova 2.6+ remote-consoles API
-    try {
-      const consoleData = await osJson(`${NOVA_URL}/servers/${serverId}/remote-consoles`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "OpenStack-API-Version": "compute 2.6",
-        },
-        body: JSON.stringify({
-          remote_console: { protocol: "vnc", type: "novnc" },
-        }),
-      });
-
-      if (consoleData?.remote_console?.url) {
-        return res.json({
-          success: true,
-          url: consoleData.remote_console.url,
-        });
-      }
-    } catch (modernErr) {
-      console.warn(
-        `[Console] Modern Nova remote-consoles API failed for ${serverId} (${modernErr.message}), trying legacy os-getVNCConsole fallback...`
-      );
-    }
-
-    // 2. Fallback: Classic os-getVNCConsole action API
-    const legacyData = await osJson(`${NOVA_URL}/servers/${serverId}/action`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        "os-getVNCConsole": { type: "novnc" },
-      }),
-    });
-
-    if (legacyData?.console?.url) {
-      return res.json({
-        success: true,
-        url: legacyData.console.url,
-      });
-    }
-
-    throw new Error("No VNC console URL returned by OpenStack Nova");
-  } catch (error) {
-    console.error(`[Console] Error fetching console for server ${serverId}:`, error.message);
-    res.status(500).json({ error: error.message || "Failed to get console URL" });
-  }
-});
-
-/* =========================
-   VM INSTANCE ACTIONS (Start / Stop / Reboot)
-   ========================= */
-app.post("/api/openstack/servers/:id/action", async (req, res) => {
-  const { id } = req.params;
-  const { action } = req.body;
-
-  let body = {};
-  if (action === "start") body = { "os-start": null };
-  else if (action === "stop") body = { "os-stop": null };
-  else if (action === "reboot") body = { reboot: { type: "SOFT" } };
-  else if (typeof action === "object") body = action;
-  else body = { [action]: null };
-
-  try {
-    await osJson(`${NOVA_URL}/servers/${id}/action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    res.json({ success: true, message: `Action "${action}" sent to instance.` });
-  } catch (error) {
-    console.error(`[VM Action] Failed to execute ${action} on ${id}:`, error.message);
-    res.status(500).json({ error: error.message || `Failed to execute action ${action}` });
-  }
-});
-
-/* =========================
-   DELETE INSTANCE (Supports both /vms/:id and /delete-vm/:id)
-   ========================= */
-app.delete(["/api/openstack/vms/:id", "/api/openstack/delete-vm/:id"], async (req, res) => {
-  const { id } = req.params;
-  if (!id) return res.status(400).json({ error: "Instance ID is required." });
-
-  try {
-    await osJson(`${NOVA_URL}/servers/${id}`, { method: "DELETE" });
-    res.json({ success: true, message: `Instance ${id} deleted successfully.` });
-  } catch (error) {
-    console.error(`[Delete VM] Error deleting ${id}:`, error.message);
-    res.status(500).json({ error: error.message || "Failed to delete instance" });
-  }
-});
-
-/* =========================
-   CREATE INSTANCE
-   ========================= */
-app.post(["/api/openstack/create-vm", "/api/openstack/launch-instance"], async (req, res) => {
-  const { name, flavor, image, network } = req.body;
-  if (!name || !flavor || !image || !network) {
-    return res.status(400).json({ error: "name, flavor, image, and network are required." });
-  }
-
-  try {
-    const flavorsData = await osJson(`${NOVA_URL}/flavors`);
-    const flavorObj = (flavorsData.flavors || []).find((f) => f.name === flavor || f.id === flavor);
-    if (!flavorObj) return res.status(400).json({ error: `Flavor not found: ${flavor}` });
-
-    const imagesData = await osJson(`${GLANCE_URL}/images?name=${encodeURIComponent(image)}`);
-    const imageObj = (imagesData.images || [])[0];
-    if (!imageObj) return res.status(400).json({ error: `Image not found: ${image}` });
-
-    const networksData = await osJson(`${NEUTRON_URL}/networks?name=${encodeURIComponent(network)}`);
-    const networkObj = (networksData.networks || [])[0];
-    if (!networkObj) return res.status(400).json({ error: `Network not found: ${network}` });
-
-    const serverBody = {
-      server: {
-        name,
-        flavorRef: flavorObj.id,
-        imageRef: imageObj.id,
-        networks: [{ uuid: networkObj.id }],
-      },
-    };
-
-    const created = await osJson(`${NOVA_URL}/servers`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(serverBody),
-    });
-
-    res.json({
-      success: true,
-      server: created.server,
-      message: `Instance "${name}" created successfully.`,
-    });
-  } catch (error) {
-    console.error("[Create VM] Error:", error.message);
-    res.status(500).json({ error: error.message || "Failed to create VM" });
-  }
-});
-
-/* =========================
-   CREATE NETWORK & SUBNET
-   ========================= */
-app.post("/api/openstack/create-network", async (req, res) => {
-  const { name, cidr } = req.body;
-  if (!name || !cidr) return res.status(400).json({ error: "name and cidr are required." });
-
-  try {
-    const createdNetwork = await osJson(`${NEUTRON_URL}/networks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        network: { name, admin_state_up: true },
-      }),
-    });
-    const networkId = createdNetwork.network.id;
-    const createdSubnet = await osJson(`${NEUTRON_URL}/subnets`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        subnet: {
-          network_id: networkId,
-          ip_version: 4,
-          cidr,
-          name: `${name}-subnet`,
-        },
-      }),
-    });
-
-    res.json({
-      success: true,
-      network: createdNetwork.network,
-      subnet: createdSubnet.subnet,
-      message: `Network "${name}" created successfully.`,
-    });
-  } catch (error) {
-    console.error("[Create Network] Error:", error.message);
-    res.status(500).json({ error: error.message || "Failed to create network" });
   }
 });
 
@@ -2482,28 +2283,130 @@ async function checkInfrastructureStatus() {
   return status;
 }
 
+/* ==========================================
+   SDN TLS CONFIGURATION ROUTES (ODL & ONOS)
+   ========================================== */
+
+app.get("/api/tls/status", async (req, res) => {
+  const { controller } = req.query;
+  if (!controller) {
+    return res.status(400).json({ error: "Controller parameter is required (odl or onos)." });
+  }
+
+  const target = controller.toLowerCase();
+
+  try {
+    if (target === "odl") {
+      const vmUser = process.env.VM_USER || os.userInfo().username;
+      const rawEtcPath = process.env.ODL_ETC_PATH || `/home/${vmUser}/karaf-0.23.0/etc`;
+      const odlEtcPath = resolvePortablePath(rawEtcPath);
+      const ofPluginPath = path.join(odlEtcPath, "org.opendaylight.openflowplugin.cfg");
+
+      if (fs.existsSync(ofPluginPath)) {
+        const content = fs.readFileSync(ofPluginPath, "utf8");
+        const isEnabled =
+          content.includes("use-transport-tls=true") || content.includes("transport-protocol=TLS");
+        return res.json({ isEnabled });
+      }
+      return res.json({ isEnabled: false });
+    } else if (target === "onos") {
+      const containerName = process.env.ONOS_CONTAINER_NAME || "onos-2.7";
+      const internalEtc = process.env.ONOS_INTERNAL_ETC || "/root/onos/apache-karaf-4.2.9/etc";
+      const ofFileName = "org.onosproject.openflow.controller.impl.OpenFlowControllerImpl.cfg";
+      const logFile = path.posix.join(internalEtc, "..", "data", "log", "karaf.log");
+
+      // Prefer the mode ONOS is really running in (last TlsParams line in karaf.log)
+      const logCmd = `docker exec ${containerName} sh -c "grep -o 'TlsParams{tlsMode=[a-z]*' ${logFile} | tail -1"`;
+      exec(logCmd, (logErr, logOut) => {
+        const m = (logOut || "").match(/tlsMode=(\w+)/);
+        if (!logErr && m) {
+          return res.json({ isEnabled: m[1] !== "disabled" });
+        }
+        // Fallback: read the cfg file
+        const checkCommand = `docker exec ${containerName} cat ${internalEtc}/${ofFileName}`;
+        exec(checkCommand, (error, stdout) => {
+          if (error || !stdout) return res.json({ isEnabled: false });
+          return res.json({ isEnabled: /tlsMode\s*=\s*(strict|enabled)/.test(stdout) });
+        });
+      });
+    } else {
+      return res.status(400).json({ error: "Unsupported controller. Choose 'odl' or 'onos'." });
+    }
+  } catch (error) {
+    res.status(500).json({ error: "Failed to read configuration status.", details: error.message });
+  }
+});
+
+// ONOS can take 2-3 minutes (container restart), which browsers/proxies drop as a
+// "Network Error". So ONOS toggles run as a background job the UI polls for the result.
+const tlsJobs = {}; // controller -> { state: "running"|"done"|"error", enable, message, startedAt }
+
+app.post("/api/tls/toggle", async (req, res) => {
+  const { controller, enable } = req.body;
+  if (!controller || typeof enable !== "boolean") {
+    return res
+      .status(400)
+      .json({ error: "Invalid request. 'controller' and boolean 'enable' required." });
+  }
+
+  const target = controller.toLowerCase();
+
+  try {
+    if (target === "odl") {
+      await updateOdlTlsConfig(enable);
+      return res.json({
+        success: true,
+        message: `ODL Southbound TLS is now ${enable ? "ENABLED" : "DISABLED"}`,
+      });
+    } else if (target === "onos") {
+      if (tlsJobs.onos?.state === "running") {
+        return res.status(202).json({ success: true, pending: true, message: "ONOS update already running." });
+      }
+      tlsJobs.onos = { state: "running", enable, message: "", startedAt: Date.now() };
+      updateOnosTlsConfig(enable)
+        .then(() => {
+          tlsJobs.onos = {
+            ...tlsJobs.onos,
+            state: "done",
+            message: `ONOS Southbound TLS is now ${enable ? "ENABLED (Strict)" : "DISABLED"}`,
+          };
+        })
+        .catch((err) => {
+          console.error("[TLS Toggle Error]", err.message);
+          tlsJobs.onos = { ...tlsJobs.onos, state: "error", message: err.message };
+        });
+      return res.status(202).json({ success: true, pending: true });
+    } else {
+      return res.status(400).json({ error: "TLS orchestration is only supported for ODL or ONOS." });
+    }
+  } catch (error) {
+    console.error("[TLS Toggle Error]", error.message);
+    res
+      .status(500)
+      .json({ error: "Failed to update controller configuration.", details: error.message });
+  }
+});
+
+app.get("/api/tls/job", (req, res) => {
+  const target = String(req.query.controller || "").toLowerCase();
+  res.json(tlsJobs[target] || { state: "idle" });
+});
+
 /* =========================
    BOOTSTRAP & SERVER START
    ========================= */
 const bootstrap = async () => {
   console.log("--- BEGINNING LEARNING PHASE (SERVICE DISCOVERY) ---");
-  try {
-    await getToken();
-    console.log("--- LEARNING PHASE COMPLETE: STARTING APIS ---");
-    console.log(`LEARNED IP ADDRESSES:`);
-    console.log(`  Keystone (Registry): ${KEYSTONE_URL}`);
-    console.log(`  Neutron  (Network):  ${NEUTRON_URL}`);
-    console.log(`  Nova     (Compute):  ${NOVA_URL}`);
-    console.log(`  Glance   (Image):    ${GLANCE_URL}`);
-  } catch (error) {
-    console.error("Warning: Failed to learn OpenStack environment addresses at startup:", error.message);
-  }
+  await getToken();
 
-  // Start Socket.io Polling for LinkGuard
+  // Start Background Pollers for LinkGuard
   startPolling(server);
 
+  // Start Digest Cron Scheduler
+  registerDigestJobs(onosClient);
+
   server.listen(port, () => {
-    console.log(`\nDashboard backend + Sockets listening on Port ${port}`);
+    console.log(`\nDashboard backend + Sockets + Cron scheduler listening on Port ${port}`);
   });
 };
 
