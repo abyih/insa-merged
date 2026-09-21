@@ -1,0 +1,18 @@
+# Slices & QoS Definition for Local Mininet/OVS Automation
+default_max_rate: 100000000 # 100 Mbps
+
+slices:
+  - name: "urllc"
+    queue_id: 0
+    min_rate: 60000000 # 60 Mbps
+    match:
+      dscp: 46
+
+  - name: "embb"
+    queue_id: 1
+    min_rate: 15000000 # 15 Mbps
+    match:
+      dscp: 0
+
+apply_to_ports: "*"
+

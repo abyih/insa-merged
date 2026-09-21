@@ -304,6 +304,53 @@ export default defineConfig({
 					});
 				}
 			},
+			// Dedicated ONOS Slices, Capacity & Verification Backend (server-onos.js on port 5051)
+			"/api/onos/slices": {
+				target: "http://127.0.0.1:5051",
+				changeOrigin: true,
+				timeout: 10000,
+				proxyTimeout: 10000,
+			},
+			"/api/onos/intent": {
+				target: "http://127.0.0.1:5051",
+				changeOrigin: true,
+				timeout: 10000,
+				proxyTimeout: 10000,
+			},
+			"/api/onos/qos": {
+				target: "http://127.0.0.1:5051",
+				changeOrigin: true,
+				timeout: 10000,
+				proxyTimeout: 10000,
+			},
+			"/api/onos/summary": {
+				target: "http://127.0.0.1:5051",
+				changeOrigin: true,
+				timeout: 10000,
+				proxyTimeout: 10000,
+			},
+			// Live verification test endpoints (ping, iperf, queue stats, DSCP check)
+			"/api/onos/verify": {
+				target: "http://127.0.0.1:5051",
+				changeOrigin: true,
+				timeout: 30000,
+				proxyTimeout: 30000,
+			},
+			// Dedicated ONOS & Mininet QoS backend (server-onos.js on port 5051)
+			"/api/onos-service": {
+				target: "http://127.0.0.1:5051",
+				changeOrigin: true,
+				rewrite: (path) => path.replace(/^\/api\/onos-service/, "/api/onos"),
+				timeout: 10000,
+				proxyTimeout: 10000,
+			},
+			// LinkGuard Security Telemetry & Control (server-onos.js on port 5051)
+			"/api/security": {
+				target: "http://127.0.0.1:5051",
+				changeOrigin: true,
+				timeout: 10000,
+				proxyTimeout: 10000,
+			},
 			// ONOS Northbound REST API — container port 8183, remapped from 8181
 			// to avoid colliding with ODL, which owns 6653/8181/8101 on this host.
 			"/api/onos": {

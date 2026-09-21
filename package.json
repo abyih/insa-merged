@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "server": "NODE_EXTRA_CA_CERTS=./odl-tls-cert.pem node server.js",
+    "server:onos": "node server-onos.js",
+    "server:all": "concurrently \"npm run server\" \"node server-onos.js\"",
     "build": "vite build",
     "test": "vitest --run",
     "preview": "vite preview"

@@ -2,3 +2,4 @@ node_modules/
 anomaly_env/
 dist/
 *.log
+data/
