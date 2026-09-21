@@ -62,8 +62,9 @@ function App() {
             <Route path="/topology" element={<TopologyRoute />} />
             <Route path="/flows" element={<Flows />} />
             <Route path="/stats" element={<Stats />} />
-            <Route path="/slicing" element={<SlicingHub />} />
+            <Route path="/slicing" element={<NetworkSlicing />} />
             <Route path="/network-slicing" element={<NetworkSlicing />} />
+            <Route path="/slicing-hub" element={<SlicingHub />} />
             <Route path="/intent-slicing" element={<IntentSlicing />} />
             <Route path="/slicing-verification" element={<SlicingVerification />} />
             <Route path="/link-guard" element={<LinkGuard />} />
