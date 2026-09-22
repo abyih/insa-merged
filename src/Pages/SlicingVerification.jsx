@@ -131,32 +131,84 @@ export default function SlicingVerification() {
     const ipToHost = (ip) => ip ? `h${parseInt(ip.split(".")[3] || "0")}` : null;
     const slicedIps = new Set();
     const newTests = [];
+    const usedSliceIds = new Set();
 
-    const findSlice = (...types) => localSlices.find((s) => types.includes(s.type));
-    const addPair = (slice, label, sliceType) => {
-      const hosts = slice?.hosts || [];
+    const matchesType = (s, types) => {
+      const tList = Array.isArray(types) ? types : [types];
+      return (
+        tList.includes(s.type) ||
+        tList.includes(s.template) ||
+        tList.includes(s.slice_type) ||
+        tList.some((t) => new RegExp(t, "i").test(s.name || ""))
+      );
+    };
+
+    const addStandardSlice = (types, defaultLabel, defaultType) => {
+      const slice = localSlices.find((s) => !usedSliceIds.has(s.id) && matchesType(s, types));
+      if (slice) {
+        usedSliceIds.add(slice.id);
+        const hosts = slice.hosts || [];
+        if (hosts.length >= 2) {
+          const ip1 = hosts[0]?.ip || hosts[0]?.ipAddresses?.[0];
+          const ip2 = hosts[1]?.ip || hosts[1]?.ipAddresses?.[0];
+          if (ip1 && ip2) {
+            newTests.push({
+              label: slice.name || defaultLabel,
+              sliceType: defaultType,
+              srcHost: ipToHost(ip1),
+              dstHost: ipToHost(ip2),
+              dstIp: ip2,
+            });
+            hosts.forEach((h) => slicedIps.add(h.ip || h.ipAddresses?.[0]));
+            return;
+          }
+        }
+      }
+      const def = DEFAULT_TESTS.find((t) => t.sliceType === defaultType);
+      if (def) newTests.push({ ...def });
+    };
+
+    addStandardSlice(["low-latency", "urllc"], "URLLC (Low Latency)", "urllc");
+    addStandardSlice(["broadband", "embb", "high-bandwidth"], "eMBB (High Bandwidth)", "embb");
+    addStandardSlice(["iot", "mmtc"], "mMTC (Massive IoT)", "mmtc");
+
+    // Add any remaining configured slices
+    localSlices.forEach((slice) => {
+      if (usedSliceIds.has(slice.id)) return;
+      usedSliceIds.add(slice.id);
+      const hosts = slice.hosts || [];
       if (hosts.length >= 2) {
         const ip1 = hosts[0]?.ip || hosts[0]?.ipAddresses?.[0];
         const ip2 = hosts[1]?.ip || hosts[1]?.ipAddresses?.[0];
         if (ip1 && ip2) {
-          newTests.push({ label, sliceType, srcHost: ipToHost(ip1), dstHost: ipToHost(ip2), dstIp: ip2 });
+          let sType = "standard";
+          if (matchesType(slice, ["low-latency", "urllc"])) sType = "urllc";
+          else if (matchesType(slice, ["broadband", "embb"])) sType = "embb";
+          else if (matchesType(slice, ["iot", "mmtc"])) sType = "mmtc";
+
+          newTests.push({
+            label: slice.name || `Slice (${ipToHost(ip1)} ↔ ${ipToHost(ip2)})`,
+            sliceType: sType,
+            srcHost: ipToHost(ip1),
+            dstHost: ipToHost(ip2),
+            dstIp: ip2,
+          });
           hosts.forEach((h) => slicedIps.add(h.ip || h.ipAddresses?.[0]));
-          return;
         }
       }
-      const def = DEFAULT_TESTS.find((t) => t.sliceType === sliceType);
-      if (def) newTests.push({ ...def });
-    };
-
-    addPair(findSlice("low-latency", "urllc"), "URLLC (Low Latency)", "urllc");
-    addPair(findSlice("broadband", "embb", "high-bandwidth"), "eMBB (High Bandwidth)", "embb");
-    addPair(findSlice("iot", "mmtc"), "mMTC (Massive IoT)", "mmtc");
+    });
 
     // Unsliced: hosts not in any slice
     const allIps = (summaryData?.hosts || []).map((h) => h.ip).filter(Boolean);
     const unslicedIps = allIps.filter((ip) => !slicedIps.has(ip));
     if (unslicedIps.length >= 2) {
-      newTests.push({ label: "Un-sliced (No QoS)", sliceType: "unsliced", srcHost: ipToHost(unslicedIps[0]), dstHost: ipToHost(unslicedIps[1]), dstIp: unslicedIps[1] });
+      newTests.push({
+        label: "Un-sliced (No QoS)",
+        sliceType: "unsliced",
+        srcHost: ipToHost(unslicedIps[0]),
+        dstHost: ipToHost(unslicedIps[1]),
+        dstIp: unslicedIps[1],
+      });
     } else {
       newTests.push({ ...DEFAULT_TESTS[3] });
     }

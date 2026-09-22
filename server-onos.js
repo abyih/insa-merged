@@ -294,8 +294,12 @@ function deduplicateHosts(rawHosts = [], rawLinks = [], rawDevices = []) {
   const seenMacs = new Set();
   const seenLocs = new Set();
   const result = [];
+  const staleHostIds = [];
 
-  for (const h of rawHosts) {
+  // Iterate in reverse chronological order: newest discovered ONOS entries come last,
+  // so reverse iteration gives priority to the newest live MACs!
+  for (let i = rawHosts.length - 1; i >= 0; i--) {
+    const h = rawHosts[i];
     const mac = (h.mac || "").toLowerCase();
     const ip = (h.ipAddresses || [])[0];
     const loc =
@@ -306,12 +310,29 @@ function deduplicateHosts(rawHosts = [], rawLinks = [], rawDevices = []) {
     const port = loc.port;
     const locKey = devId && port ? `${devId}:${port}` : null;
 
-    if (activeDevIds.size > 0 && devId && !activeDevIds.has(devId)) continue;
-    if (locKey && trunkPorts.has(locKey)) continue;
+    const hostId = h.id || `${h.mac}/None`;
 
-    if (mac && seenMacs.has(mac)) continue;
-    if (ip && seenIps.has(ip)) continue;
-    if (locKey && seenLocs.has(locKey)) continue;
+    if (activeDevIds.size > 0 && devId && !activeDevIds.has(devId)) {
+      staleHostIds.push(hostId);
+      continue;
+    }
+    if (locKey && trunkPorts.has(locKey)) {
+      staleHostIds.push(hostId);
+      continue;
+    }
+
+    if (mac && seenMacs.has(mac)) {
+      staleHostIds.push(hostId);
+      continue;
+    }
+    if (ip && seenIps.has(ip)) {
+      staleHostIds.push(hostId);
+      continue;
+    }
+    if (locKey && seenLocs.has(locKey)) {
+      staleHostIds.push(hostId);
+      continue;
+    }
 
     if (mac) seenMacs.add(mac);
     if (ip) seenIps.add(ip);
@@ -320,8 +341,28 @@ function deduplicateHosts(rawHosts = [], rawLinks = [], rawDevices = []) {
     result.push(h);
   }
 
-  return result;
+  // Asynchronously prune stale ghost host records from ONOS
+  if (staleHostIds.length > 0) {
+    staleHostIds.forEach((hid) => {
+      onosFetch(`/onos/v1/hosts/${encodeURIComponent(hid)}`, { method: "DELETE" }).catch(() => {});
+    });
+  }
+
+  return result.reverse();
 }
+
+app.post(["/api/onos/flush-arp", "/api/onos/verify/flush-arp"], async (req, res) => {
+  try {
+    const { stdout } = await runMininetCmd(
+      'for pid in $(pgrep -f "mininet:h[0-9]+$"); do sudo mnexec -a $pid ip neigh flush all 2>/dev/null || true; done',
+      10000
+    );
+    res.json({ success: true, message: "Neighbor tables flushed across all Mininet hosts", stdout });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 app.get(["/api/onos/summary", "/api/onos/cloud-summary"], async (req, res) => {
   try {
@@ -624,8 +665,9 @@ async function findHostPid(hostname) {
  */
 async function execInHost(hostname, command, timeout = 30000) {
   const pid = await findHostPid(hostname);
+  const escapedCmd = command.replace(/'/g, "'\\''");
   const { stdout, stderr } = await runMininetCmd(
-    `sudo mnexec -a ${pid} ${command}`,
+    `sudo mnexec -a ${pid} sh -c '${escapedCmd}'`,
     timeout
   );
   return { stdout: stdout.trim(), stderr: stderr.trim() };
@@ -704,7 +746,11 @@ app.post("/api/onos/verify/ping", async (req, res) => {
   if (!validateIp(dstIp)) return res.status(400).json({ error: "Invalid IP address" });
   const safeCount = Math.min(Math.max(1, parseInt(count) || 10), 50);
   try {
-    const { stdout } = await execInHost(srcHost, `ping -c ${safeCount} -i 0.2 ${dstIp}`, 30000);
+    const { stdout } = await execInHost(
+      srcHost,
+      `ip neigh del ${dstIp} dev ${srcHost}-eth0 2>/dev/null || true; ping -c ${safeCount} -i 0.2 ${dstIp}`,
+      30000
+    );
     const parsed = parsePingOutput(stdout);
     res.json({ success: true, srcHost, dstIp, ...parsed, raw: stdout });
   } catch (err) {
@@ -967,7 +1013,11 @@ app.post("/api/onos/verify/compare", async (req, res) => {
     const entry = { label, sliceType, srcHost, dstHost, dstIp };
     // 1. Ping test
     try {
-      const { stdout } = await execInHost(srcHost, `ping -c 5 -i 0.2 ${dstIp}`, 10000);
+      const { stdout } = await execInHost(
+        srcHost,
+        `ip neigh del ${dstIp} dev ${srcHost}-eth0 2>/dev/null || true; ping -c 5 -i 0.2 ${dstIp}`,
+        10000
+      );
       entry.ping = parsePingOutput(stdout);
     } catch (err) {
       entry.ping = { error: err.message, avg: null, jitter: null, packetLoss: 100 };

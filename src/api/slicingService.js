@@ -130,14 +130,23 @@ export function normalizeSlice(s) {
 }
 
 export async function fetchSlicesFromDb() {
+  if (typeof window === "undefined") return loadSlices();
   try {
     const res = await fetch("/api/onos/slices");
     if (res.ok) {
       const dbSlices = await res.json();
       if (Array.isArray(dbSlices)) {
-        const normalized = dbSlices.map(normalizeSlice);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-        return normalized;
+        const local = loadSlices();
+        // If DB returned slices, normalize and persist to local storage
+        if (dbSlices.length > 0) {
+          const normalized = dbSlices.map(normalizeSlice);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+          return normalized;
+        } else if (local.length > 0) {
+          // If DB is empty but localStorage has slices, sync local slices to DB
+          await saveSlices(local);
+          return local;
+        }
       }
     }
   } catch (err) {
@@ -155,16 +164,27 @@ export function loadSlices() {
   }
 }
 
-export function saveSlices(slices) {
+export async function saveSlices(slices) {
   const normalizedSlices = Array.isArray(slices) ? slices.map(normalizeSlice) : [];
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedSlices));
-  normalizedSlices.forEach((s) => {
-    fetch("/api/onos/slices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(s),
-    }).catch(() => {});
-  });
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedSlices));
+  } catch {}
+  if (typeof window !== "undefined") {
+    try {
+      await Promise.all(
+        normalizedSlices.map((s) =>
+          fetch("/api/onos/slices", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(s),
+          })
+        )
+      );
+    } catch (err) {
+      console.warn("[Slicing] Failed to sync slices to backend DB:", err);
+    }
+  }
+  return normalizedSlices;
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -316,12 +336,12 @@ export async function getTopologyInfo() {
   const knownLocations = new Set();
 
   // 1. Live ONOS Hosts attached to active switches (filtering out transit trunk ports)
-  //    Deduplicate by MAC, IP, AND location — ONOS retains stale host entries from
-  //    previous Mininet sessions (same IP and location but different MACs).
+  //    Deduplicate by MAC, IP, AND location in reverse chronological order so that
+  //    the latest learned live host takes precedence over stale entries.
   const seenOnosMacs = new Set();
   const seenOnosIps = new Set();
   const seenOnosLocations = new Set();
-  const liveHosts = (hosts || []).filter((h) => {
+  const liveHosts = [...(hosts || [])].reverse().filter((h) => {
     const loc = getHostLocation(h, links);
     if (!loc || !activeDeviceIds.has(loc.deviceId)) return false;
     const mac = (h.mac || "").toLowerCase();
@@ -337,7 +357,7 @@ export async function getTopologyInfo() {
     if (ip) seenOnosIps.add(ip);
     seenOnosLocations.add(locKey);
     return true;
-  });
+  }).reverse();
 
   // Track how many live hosts each switch already has (used by Layer 3)
   const switchLiveHostCount = new Map();
@@ -963,7 +983,8 @@ export async function createSlice(sliceConfig) {
 
   const slices = loadSlices();
   slices.push(slice);
-  saveSlices(slices);
+  await saveSlices(slices);
+  fetch("/api/onos/flush-arp", { method: "POST" }).catch(() => {});
 
   return slice;
 }
@@ -1142,7 +1163,8 @@ export async function updateSlice(sliceId, updatedConfig) {
   };
 
   slices[sliceIndex] = updatedSlice;
-  saveSlices(slices);
+  await saveSlices(slices);
+  fetch("/api/onos/flush-arp", { method: "POST" }).catch(() => {});
 
   return updatedSlice;
 }
@@ -1158,10 +1180,11 @@ export async function deleteSlice(sliceId) {
   const errors = await removeSliceNetworkArtifacts(slice);
 
   const remaining = slices.filter((s) => s.id !== sliceId);
-  saveSlices(remaining);
+  await saveSlices(remaining);
 
   // Remove from SQLite database
-  fetch(`/api/onos/slices/${encodeURIComponent(sliceId)}`, { method: "DELETE" }).catch(() => {});
+  await fetch(`/api/onos/slices/${encodeURIComponent(sliceId)}`, { method: "DELETE" }).catch(() => {});
+  fetch("/api/onos/flush-arp", { method: "POST" }).catch(() => {});
 
   return { success: true, warnings: errors.length > 0 ? errors : undefined };
 }
