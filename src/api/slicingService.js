@@ -316,10 +316,31 @@ export async function getTopologyInfo() {
   const knownLocations = new Set();
 
   // 1. Live ONOS Hosts attached to active switches (filtering out transit trunk ports)
+  //    Deduplicate by MAC, IP, AND location — ONOS retains stale host entries from
+  //    previous Mininet sessions (same IP and location but different MACs).
+  const seenOnosMacs = new Set();
+  const seenOnosIps = new Set();
+  const seenOnosLocations = new Set();
   const liveHosts = (hosts || []).filter((h) => {
     const loc = getHostLocation(h, links);
-    return loc && activeDeviceIds.has(loc.deviceId);
+    if (!loc || !activeDeviceIds.has(loc.deviceId)) return false;
+    const mac = (h.mac || "").toLowerCase();
+    const ip = ((h.ipAddresses || [])[0] || "").toLowerCase();
+    const locKey = `${loc.deviceId}:${loc.port}`;
+
+    // Skip if we already have a host with the same MAC, IP, or physical port
+    if (mac && seenOnosMacs.has(mac)) return false;
+    if (ip && seenOnosIps.has(ip)) return false;
+    if (seenOnosLocations.has(locKey)) return false;
+
+    if (mac) seenOnosMacs.add(mac);
+    if (ip) seenOnosIps.add(ip);
+    seenOnosLocations.add(locKey);
+    return true;
   });
+
+  // Track how many live hosts each switch already has (used by Layer 3)
+  const switchLiveHostCount = new Map();
 
   for (const h of liveHosts) {
     const mac = (h.mac || h.id || "").toLowerCase();
@@ -330,6 +351,11 @@ export async function getTopologyInfo() {
     if (mac) knownMacs.add(mac);
     if (ip) knownIps.add(ip);
     if (locKey) knownLocations.add(locKey);
+
+    // Count live hosts per switch
+    if (loc?.deviceId) {
+      switchLiveHostCount.set(loc.deviceId, (switchLiveHostCount.get(loc.deviceId) || 0) + 1);
+    }
 
     allHosts.push({
       ...h,
@@ -399,6 +425,8 @@ export async function getTopologyInfo() {
   }
 
   // 3. Complement with leaf switch standard endpoints (e.g. s2: h1, h2; s3: h3, h4)
+  //    Only generate placeholders for leaf switches that have NO live hosts yet,
+  //    and never place placeholders on inter-switch trunk ports.
   if (devices.length > 0) {
     const leafSwitches = devices.filter((d) => {
       if (devices.length <= 1) return true;
@@ -411,11 +439,18 @@ export async function getTopologyInfo() {
     const sortedSwitches = [...targetSwitches].sort((a, b) => getSwitchNumber(a) - getSwitchNumber(b));
 
     sortedSwitches.forEach((sw, swIdx) => {
+      // Skip this switch if it already has live hosts from Layers 1-2
+      if ((switchLiveHostCount.get(sw.id) || 0) > 0) return;
+
       for (let i = 1; i <= 2; i++) {
         const count = swIdx * 2 + i;
         const mac = `00:00:00:00:00:0${count}`;
         const ip = `10.0.0.${count}`;
-        const locKey = `${sw.id}:${i}`;
+        const locKey = `${sw.id}:${String(i)}`;
+
+        // Never place a placeholder on a trunk port
+        if (interSwitchPorts.has(locKey)) continue;
+
         const isKnown =
           (mac && knownMacs.has(mac.toLowerCase())) ||
           (ip && knownIps.has(ip.toLowerCase())) ||
@@ -499,13 +534,9 @@ export function getHostLocation(host, links = []) {
     };
   }
 
-  if (host.locations && host.locations.length > 0) {
-    return {
-      deviceId: host.locations[0].elementId,
-      port: String(host.locations[0].port || "1"),
-    };
-  }
-
+  // All locations were trunk ports — this host is only visible on inter-switch links
+  // (e.g. after pingall, ONOS may register a host at an intermediate switch).
+  // Return null so this host is excluded from the topology.
   return null;
 }
 
@@ -575,6 +606,8 @@ export function findSwitchPath(srcDev, dstDev, links = [], srcHostPort, dstHostP
  */
 export async function provisionSliceNetwork(sliceConfig, topologyLinks) {
   const {
+    name = "",
+    description = "",
     bandwidth,
     burstSize = Math.round(bandwidth * 0.2),
     unit = "KB_PER_SEC",
@@ -582,6 +615,16 @@ export async function provisionSliceNetwork(sliceConfig, topologyLinks) {
     type,
     template,
   } = sliceConfig;
+
+  const isLowLatency =
+    type === "low-latency" ||
+    template === "urllc" ||
+    sliceConfig.slice_type === "low-latency" ||
+    sliceConfig.sliceType === "low-latency" ||
+    sliceConfig.type === "low-latency" ||
+    sliceConfig.template === "urllc" ||
+    /urllc|low-latency|low latency/i.test(name || sliceConfig.name || "") ||
+    /urllc|low-latency|low latency/i.test(description || sliceConfig.description || "");
 
   const installedFlows = [];
   const installedHosts = [];
@@ -693,8 +736,6 @@ export async function provisionSliceNetwork(sliceConfig, topologyLinks) {
       }
 
       // Install unicast forwarding flows along each hop
-      const isLowLatency = type === "low-latency" || template === "urllc";
-
       for (let hopIdx = 0; hopIdx < hops.length; hopIdx++) {
         const hop = hops[hopIdx];
         const isIngress = hopIdx === 0;
@@ -706,8 +747,8 @@ export async function provisionSliceNetwork(sliceConfig, topologyLinks) {
             { type: "IP_DSCP", ipDscp: 46 },
             { type: "IN_PORT", port: Number(hop.inPort) },
           ];
-          if (hostA.mac) dscpCriteria.push({ type: "ETH_SRC", mac: hostA.mac });
-          if (hostB.mac) dscpCriteria.push({ type: "ETH_DST", mac: hostB.mac });
+          if (hostA.mac && !isSyntheticMac(hostA.mac)) dscpCriteria.push({ type: "ETH_SRC", mac: hostA.mac });
+          if (hostB.mac && !isSyntheticMac(hostB.mac)) dscpCriteria.push({ type: "ETH_DST", mac: hostB.mac });
 
           const dscp46Flow = {
             priority: 41000,
@@ -844,9 +885,20 @@ export async function createSlice(sliceConfig) {
     color = "#6366f1",
     selectedHosts = sliceConfig.selectedHosts || sliceConfig.hosts || [],
     vlanId: manualVlanId = null,
-    type,
-    template,
+    type: inputType,
+    template: inputTemplate,
   } = sliceConfig;
+
+  const isLowLat =
+    inputType === "low-latency" ||
+    inputTemplate === "urllc" ||
+    sliceConfig.slice_type === "low-latency" ||
+    sliceConfig.sliceType === "low-latency" ||
+    /urllc|low-latency|low latency/i.test(name || "") ||
+    /urllc|low-latency|low latency/i.test(description || "");
+
+  const type = isLowLat ? "low-latency" : (inputType || "standard");
+  const template = isLowLat ? "urllc" : (inputTemplate || null);
 
   if (!name) throw new Error("Slice name is required");
   if (!bandwidth || bandwidth <= 0) throw new Error("Bandwidth must be > 0");
@@ -878,6 +930,8 @@ export async function createSlice(sliceConfig) {
   // Provision network meters and flow rules on ONOS
   const { installedHosts, installedFlows } = await provisionSliceNetwork(
     {
+      name,
+      description,
       selectedHosts,
       bandwidth: Number(bandwidth),
       burstSize: Number(burstSize),
@@ -1006,9 +1060,24 @@ export async function updateSlice(sliceId, updatedConfig) {
     color = updatedConfig.color || oldSlice.color || "#6366f1",
     selectedHosts = updatedConfig.selectedHosts || updatedConfig.hosts || oldSlice.hosts || [],
     vlanId = updatedConfig.vlanId || oldSlice.vlanId,
-    type = updatedConfig.type || oldSlice.type,
-    template = updatedConfig.template || oldSlice.template,
+    type: inputType = updatedConfig.type || oldSlice.type,
+    template: inputTemplate = updatedConfig.template || oldSlice.template,
   } = updatedConfig;
+
+  const isLowLat =
+    inputType === "low-latency" ||
+    inputTemplate === "urllc" ||
+    updatedConfig.slice_type === "low-latency" ||
+    updatedConfig.sliceType === "low-latency" ||
+    oldSlice.type === "low-latency" ||
+    oldSlice.template === "urllc" ||
+    oldSlice.slice_type === "low-latency" ||
+    oldSlice.sliceType === "low-latency" ||
+    /urllc|low-latency|low latency/i.test(name || "") ||
+    /urllc|low-latency|low latency/i.test(description || "");
+
+  const type = isLowLat ? "low-latency" : (inputType || "standard");
+  const template = isLowLat ? "urllc" : (inputTemplate || null);
 
   if (!name) throw new Error("Slice name is required");
   if (!bandwidth || Number(bandwidth) <= 0) throw new Error("Bandwidth must be > 0");
@@ -1041,6 +1110,8 @@ export async function updateSlice(sliceId, updatedConfig) {
   // 2. Provision new network artifacts in ONOS for updatedConfig
   const { installedHosts, installedFlows } = await provisionSliceNetwork(
     {
+      name,
+      description,
       selectedHosts,
       bandwidth: Number(bandwidth),
       burstSize: Number(burstSize),

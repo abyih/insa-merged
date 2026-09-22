@@ -275,10 +275,17 @@ const NetworkTopologySvc = {
 				const knownHostLocs = new Set();
 
 				// 3a. Add live discovered hosts (strictly on edge ports)
+				//     Deduplicate by MAC, IP, AND location — ONOS retains stale host entries
+				//     from previous Mininet sessions (same IP and location but different MACs).
 				ofDiscoveredHosts.forEach((h) => {
 					const hostId = h.id || h.mac;
 					const ip = h.ipAddresses?.[0] || h.mac;
 					const mac = (h.mac || "").toLowerCase();
+
+					// Skip duplicate hosts (stale ONOS entries from previous sessions)
+					if (mac && knownHostMacs.has(mac)) return;
+					if (ip && knownHostIps.has(ip.toLowerCase())) return;
+
 					if (mac) knownHostMacs.add(mac);
 					if (ip) knownHostIps.add(ip.toLowerCase());
 
@@ -297,7 +304,9 @@ const NetworkTopologySvc = {
 							ofNodeIds.has(loc.elementId) &&
 							!interSwitchPorts.has(`${loc.elementId}:${loc.port}`)
 						) {
-							knownHostLocs.add(`${loc.elementId}:${loc.port}`);
+							const locKey = `${loc.elementId}:${loc.port}`;
+							if (knownHostLocs.has(locKey)) return;
+							knownHostLocs.add(locKey);
 							ofLinks.push({
 								from: hostId,
 								to: loc.elementId,

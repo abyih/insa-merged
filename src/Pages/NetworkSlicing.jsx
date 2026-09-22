@@ -448,6 +448,8 @@ function CreateSliceModal({
     color: SLICE_COLORS[0],
     vlanId: "",
     selectedHostIds: [],
+    type: "standard",
+    template: null,
   });
   const [selectedTemplate, setSelectedTemplate] = useState(null);
 
@@ -459,8 +461,12 @@ function CreateSliceModal({
         const hostIds =
           initialData.selectedHostIds ||
           (initialData.hosts || []).map((h) => h.id || h.hostId || `${h.mac}/None`);
+        const initType = initialData.type || initialData.slice_type || initialData.sliceType || "standard";
+        const isUrllc = initType === "low-latency" || /urllc|low-latency|low latency/i.test(initialData.name || "");
+        const initTemplate = initialData.template || (isUrllc ? "urllc" : null);
+
         setForm({
-          name: initialData.name || "",
+          name: initialData.name || initialData.sliceName || "",
           description: initialData.description || "",
           bandwidth: initialData.bandwidth ?? initialData.bandwidthKbps ?? initialData.bandwidth_kbps ?? 5000,
           burstSize: initialData.burstSize ?? initialData.burstKbps ?? initialData.burst_kbps ?? Math.round(((initialData.bandwidth ?? initialData.bandwidthKbps ?? initialData.bandwidth_kbps) || 5000) * 0.2),
@@ -468,7 +474,10 @@ function CreateSliceModal({
           color: initialData.color || SLICE_COLORS[0],
           vlanId: initialData.vlanId || "",
           selectedHostIds: hostIds,
+          type: isUrllc ? "low-latency" : initType,
+          template: initTemplate,
         });
+        setSelectedTemplate(initTemplate);
       } else {
         setForm({
           name: "",
@@ -479,7 +488,10 @@ function CreateSliceModal({
           color: SLICE_COLORS[0],
           vlanId: "",
           selectedHostIds: [],
+          type: "standard",
+          template: null,
         });
+        setSelectedTemplate(null);
       }
     }
   }, [isOpen, initialData]);
@@ -500,6 +512,8 @@ function CreateSliceModal({
       burstSize: template.burstSize || Math.round(template.bandwidth * 0.2),
       unit: template.unit,
       color: template.color,
+      type: template.type,
+      template: template.id,
     }));
   };
 
@@ -530,8 +544,18 @@ function CreateSliceModal({
     const selectedHostObjects = onosHosts.filter((h) =>
       form.selectedHostIds.includes(h.id || `${h.mac}/None`)
     );
+    const isUrllc =
+      form.type === "low-latency" ||
+      form.template === "urllc" ||
+      selectedTemplate === "urllc" ||
+      /urllc|low-latency|low latency/i.test(form.name);
+    const resolvedType = isUrllc ? "low-latency" : (form.type || "standard");
+    const resolvedTemplate = isUrllc ? "urllc" : (form.template || selectedTemplate || null);
+
     onSubmit({
       ...form,
+      type: resolvedType,
+      template: resolvedTemplate,
       bandwidth: Number(form.bandwidth),
       burstSize: Number(form.burstSize),
       vlanId: form.vlanId ? Number(form.vlanId) : null,

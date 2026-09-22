@@ -110,24 +110,30 @@ app.get(["/api/onos/slices/vlan/next", "/api/onos-service/slices/vlan/next"], (r
 app.get(["/api/onos/slices", "/api/onos-service/slices"], (req, res) => {
   try {
     const rows = db.prepare("SELECT * FROM onos_slices ORDER BY created_at DESC").all();
-    const slices = rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      type: r.slice_type,
-      color: r.color,
-      vlanId: r.vlan_id,
-      bandwidth: r.bandwidth_kbps,
-      bandwidthKbps: r.bandwidth_kbps,
-      burstSize: r.burst_kbps,
-      burstKbps: r.burst_kbps,
-      hosts: JSON.parse(r.hosts || "[]"),
-      status: r.status,
-      meterIds: JSON.parse(r.meter_ids || "{}"),
-      flowRuleIds: JSON.parse(r.flow_rule_ids || "[]"),
-      priority: r.priority,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
+    const slices = rows.map((r) => {
+      const isUrllc = r.slice_type === "low-latency" || /urllc|low-latency|low latency/i.test(r.name || "");
+      const resolvedType = isUrllc ? "low-latency" : (r.slice_type || "standard");
+      return {
+        id: r.id,
+        name: r.name,
+        type: resolvedType,
+        slice_type: resolvedType,
+        template: isUrllc ? "urllc" : null,
+        color: r.color,
+        vlanId: r.vlan_id,
+        bandwidth: r.bandwidth_kbps,
+        bandwidthKbps: r.bandwidth_kbps,
+        burstSize: r.burst_kbps,
+        burstKbps: r.burst_kbps,
+        hosts: JSON.parse(r.hosts || "[]"),
+        status: r.status,
+        meterIds: JSON.parse(r.meter_ids || "{}"),
+        flowRuleIds: JSON.parse(r.flow_rule_ids || "[]"),
+        priority: r.priority,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      };
+    });
     res.json(slices);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -138,10 +144,14 @@ app.get(["/api/onos/slices/:id", "/api/onos-service/slices/:id"], (req, res) => 
   try {
     const r = db.prepare("SELECT * FROM onos_slices WHERE id = ?").get(req.params.id);
     if (!r) return res.status(404).json({ error: "Slice not found" });
+    const isUrllc = r.slice_type === "low-latency" || /urllc|low-latency|low latency/i.test(r.name || "");
+    const resolvedType = isUrllc ? "low-latency" : (r.slice_type || "standard");
     res.json({
       id: r.id,
       name: r.name,
-      type: r.slice_type,
+      type: resolvedType,
+      slice_type: resolvedType,
+      template: isUrllc ? "urllc" : null,
       color: r.color,
       vlanId: r.vlan_id,
       bandwidth: r.bandwidth_kbps,
@@ -167,6 +177,9 @@ app.post(["/api/onos/slices", "/api/onos-service/slices"], (req, res) => {
     if (!s.id || !s.name) {
       return res.status(400).json({ error: "Slice ID and name required" });
     }
+    const isUrllc = s.type === "low-latency" || s.slice_type === "low-latency" || s.template === "urllc" || /urllc|low-latency|low latency/i.test(s.name || "");
+    const resolvedType = isUrllc ? "low-latency" : (s.type || s.slice_type || "standard");
+
     const existing = db.prepare("SELECT id FROM onos_slices WHERE id = ?").get(s.id);
     if (existing) {
       db.prepare(`
@@ -176,7 +189,7 @@ app.post(["/api/onos/slices", "/api/onos-service/slices"], (req, res) => {
           meter_ids = ?, flow_rule_ids = ?, priority = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(
-        s.name, s.type || s.slice_type || "CUSTOM", s.color || "#6366f1", s.vlanId || s.vlan_id || null,
+        s.name, resolvedType, s.color || "#6366f1", s.vlanId || s.vlan_id || null,
         s.bandwidth ?? s.bandwidthKbps ?? s.bandwidth_kbps ?? 10000, s.burstSize ?? s.burstKbps ?? s.burst_kbps ?? 15000,
         JSON.stringify(s.hosts || []), s.status || "ACTIVE",
         JSON.stringify(s.meterIds || s.meter_ids || {}), JSON.stringify(s.flowRuleIds || s.flow_rule_ids || []),
@@ -189,14 +202,14 @@ app.post(["/api/onos/slices", "/api/onos-service/slices"], (req, res) => {
           hosts, status, meter_ids, flow_rule_ids, priority
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        s.id, s.name, s.type || s.slice_type || "CUSTOM", s.color || "#6366f1", s.vlanId || s.vlan_id || null,
+        s.id, s.name, resolvedType, s.color || "#6366f1", s.vlanId || s.vlan_id || null,
         s.bandwidth ?? s.bandwidthKbps ?? s.bandwidth_kbps ?? 10000, s.burstSize ?? s.burstKbps ?? s.burst_kbps ?? 15000,
         JSON.stringify(s.hosts || []), s.status || "ACTIVE",
         JSON.stringify(s.meterIds || s.meter_ids || {}), JSON.stringify(s.flowRuleIds || s.flow_rule_ids || []),
         s.priority || 40000
       );
     }
-    res.json({ success: true, slice: s });
+    res.json({ success: true, slice: { ...s, type: resolvedType, slice_type: resolvedType } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -228,7 +241,12 @@ const onosFetch = async (apiPath, options = {}) => {
     const text = await resp.text();
     throw new Error(`ONOS request ${apiPath} failed (${resp.status}): ${text}`);
   }
-  return resp.json();
+  const text = await resp.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {};
+  }
 };
 
 /* ==============================================================================
@@ -258,6 +276,53 @@ app.get(["/api/onos/ping", "/api/ping"], async (req, res) => {
 /* ==============================================================================
    SUMMARY ENDPOINT: DISCOVERED MININET TOPOLOGY, HOSTS, DEVICES, FLOWS, QoS
    ============================================================================== */
+// Helper: Deduplicate ONOS hosts (removes stale duplicates across Mininet sessions and trunk port ghosts)
+function deduplicateHosts(rawHosts = [], rawLinks = [], rawDevices = []) {
+  const trunkPorts = new Set();
+  rawLinks.forEach((l) => {
+    if (l.src?.device && l.src?.port) trunkPorts.add(`${l.src.device}:${l.src.port}`);
+    if (l.dst?.device && l.dst?.port) trunkPorts.add(`${l.dst.device}:${l.dst.port}`);
+  });
+
+  const activeDevIds = new Set(
+    rawDevices.length > 0
+      ? rawDevices.filter((d) => d.available).map((d) => d.id)
+      : []
+  );
+
+  const seenIps = new Set();
+  const seenMacs = new Set();
+  const seenLocs = new Set();
+  const result = [];
+
+  for (const h of rawHosts) {
+    const mac = (h.mac || "").toLowerCase();
+    const ip = (h.ipAddresses || [])[0];
+    const loc =
+      (h.locations || []).find((l) => l.elementId && !trunkPorts.has(`${l.elementId}:${l.port}`)) ||
+      h.locations?.[0] ||
+      {};
+    const devId = loc.elementId || loc.deviceId;
+    const port = loc.port;
+    const locKey = devId && port ? `${devId}:${port}` : null;
+
+    if (activeDevIds.size > 0 && devId && !activeDevIds.has(devId)) continue;
+    if (locKey && trunkPorts.has(locKey)) continue;
+
+    if (mac && seenMacs.has(mac)) continue;
+    if (ip && seenIps.has(ip)) continue;
+    if (locKey && seenLocs.has(locKey)) continue;
+
+    if (mac) seenMacs.add(mac);
+    if (ip) seenIps.add(ip);
+    if (locKey) seenLocs.add(locKey);
+
+    result.push(h);
+  }
+
+  return result;
+}
+
 app.get(["/api/onos/summary", "/api/onos/cloud-summary"], async (req, res) => {
   try {
     const [hostsRes, devicesRes, linksRes, flowsRes, metersRes, clusterRes] =
@@ -277,8 +342,18 @@ app.get(["/api/onos/summary", "/api/onos/cloud-summary"], async (req, res) => {
     const rawMeters = metersRes.status === "fulfilled" ? metersRes.value?.meters || [] : [];
     const clusterNodes = clusterRes.status === "fulfilled" ? clusterRes.value?.nodes || [] : [];
 
-    const hosts = rawHosts.map((h) => {
-      const loc = h.locations?.[0] || {};
+    const cleanHosts = deduplicateHosts(rawHosts, rawLinks, rawDevices);
+    const trunkPorts = new Set();
+    rawLinks.forEach((l) => {
+      if (l.src?.device && l.src?.port) trunkPorts.add(`${l.src.device}:${l.src.port}`);
+      if (l.dst?.device && l.dst?.port) trunkPorts.add(`${l.dst.device}:${l.dst.port}`);
+    });
+
+    const hosts = cleanHosts.map((h) => {
+      const loc =
+        (h.locations || []).find((l) => l.elementId && !trunkPorts.has(`${l.elementId}:${l.port}`)) ||
+        h.locations?.[0] ||
+        {};
       return {
         id: h.id,
         name: h.id,
@@ -387,8 +462,13 @@ app.get("/api/onos/devices", async (req, res) => {
 
 app.get("/api/onos/hosts", async (req, res) => {
   try {
-    const data = await onosFetch("/onos/v1/hosts");
-    res.json(data?.hosts || []);
+    const [hostsData, linksData, devicesData] = await Promise.all([
+      onosFetch("/onos/v1/hosts").catch(() => ({ hosts: [] })),
+      onosFetch("/onos/v1/links").catch(() => ({ links: [] })),
+      onosFetch("/onos/v1/devices").catch(() => ({ devices: [] })),
+    ]);
+    const cleanHosts = deduplicateHosts(hostsData?.hosts || [], linksData?.links || [], devicesData?.devices || []);
+    res.json(cleanHosts);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -677,18 +757,162 @@ app.get("/api/onos/verify/queues", async (req, res) => {
   }
 });
 
+// Helper: Ensure DSCP 46 Priority Queue Flows exist for all active URLLC slices
+async function ensureUrllcDscpFlows() {
+  try {
+    const urllcSlices = db.prepare(
+      "SELECT * FROM onos_slices WHERE status = 'ACTIVE' AND (slice_type = 'low-latency' OR name LIKE '%URLLC%' OR name LIKE '%low%latency%')"
+    ).all();
+    if (!urllcSlices.length) return 0;
+
+    const [linksData, devicesData, flowsData] = await Promise.all([
+      onosFetch("/onos/v1/links").catch(() => ({ links: [] })),
+      onosFetch("/onos/v1/devices").catch(() => ({ devices: [] })),
+      onosFetch("/onos/v1/flows").catch(() => ({ flows: [] })),
+    ]);
+
+    const links = linksData.links || [];
+    const activeDevices = new Set(
+      (devicesData.devices || []).filter((d) => d.available).map((d) => d.id)
+    );
+    const existingFlows = flowsData.flows || [];
+
+    // Helper BFS path
+    const findSwitchPath = (srcDev, dstDev, srcPort, dstPort) => {
+      if (srcDev === dstDev) {
+        return [{ deviceId: srcDev, inPort: Number(srcPort), outPort: Number(dstPort) }];
+      }
+      const adj = {};
+      for (const link of links) {
+        const u = link.src?.device;
+        const v = link.dst?.device;
+        if (!u || !v) continue;
+        if (!adj[u]) adj[u] = [];
+        adj[u].push({ nextDev: v, outPort: link.src.port, inPortNext: link.dst.port });
+      }
+      const queue = [[{ dev: srcDev, inPort: srcPort, outPort: null }]];
+      const visited = new Set([srcDev]);
+      while (queue.length > 0) {
+        const path = queue.shift();
+        const curr = path[path.length - 1];
+        if (curr.dev === dstDev) {
+          curr.outPort = dstPort;
+          return path.map((h) => ({ deviceId: h.dev, inPort: Number(h.inPort), outPort: Number(h.outPort) }));
+        }
+        for (const n of (adj[curr.dev] || [])) {
+          if (!visited.has(n.nextDev)) {
+            visited.add(n.nextDev);
+            curr.outPort = n.outPort;
+            queue.push([...path.slice(0, -1), { ...curr }, { dev: n.nextDev, inPort: n.inPortNext, outPort: null }]);
+          }
+        }
+      }
+      return null;
+    };
+
+    let installedCount = 0;
+
+    for (const slice of urllcSlices) {
+      let hosts = [];
+      try {
+        hosts = JSON.parse(slice.hosts || "[]");
+      } catch {
+        continue;
+      }
+      if (hosts.length < 2) continue;
+
+      for (let i = 0; i < hosts.length; i++) {
+        const hA = hosts[i];
+        if (!hA.deviceId || !hA.port || !activeDevices.has(hA.deviceId)) continue;
+
+        for (let j = 0; j < hosts.length; j++) {
+          if (i === j) continue;
+          const hB = hosts[j];
+          if (!hB.deviceId || !hB.port || !activeDevices.has(hB.deviceId)) continue;
+
+          const hops = findSwitchPath(hA.deviceId, hB.deviceId, hA.port, hB.port);
+          if (!hops || !hops.length) continue;
+
+          for (const hop of hops) {
+            // Check if already installed
+            const alreadyExists = existingFlows.some((f) => {
+              if (f.deviceId !== hop.deviceId || f.priority !== 41000) return false;
+              const crit = f.selector?.criteria || [];
+              const inst = f.treatment?.instructions || [];
+              const hasDscp = crit.some((c) => c.type === "IP_DSCP" && (c.ipDscp === 46 || c.ipDscp === "46"));
+              const hasInPort = crit.some((c) => c.type === "IN_PORT" && Number(c.port) === Number(hop.inPort));
+              const hasQueue0 = inst.some((it) => it.type === "QUEUE" && (it.queueId === 0 || it.queueId === "0"));
+              const hasOutPort = inst.some((it) => it.type === "OUTPUT" && String(it.port) === String(hop.outPort));
+              return hasDscp && hasInPort && hasQueue0 && hasOutPort;
+            });
+
+            if (alreadyExists) continue;
+
+            const dscpCriteria = [
+              { type: "ETH_TYPE", ethType: 2048 },
+              { type: "IP_DSCP", ipDscp: 46 },
+              { type: "IN_PORT", port: Number(hop.inPort) },
+            ];
+            if (hA.mac && !hA.mac.toLowerCase().startsWith("00:00:00:00:00:")) {
+              dscpCriteria.push({ type: "ETH_SRC", mac: hA.mac });
+            }
+            if (hB.mac && !hB.mac.toLowerCase().startsWith("00:00:00:00:00:")) {
+              dscpCriteria.push({ type: "ETH_DST", mac: hB.mac });
+            }
+
+            const flowPayload = {
+              priority: 41000,
+              timeout: 0,
+              isPermanent: true,
+              deviceId: hop.deviceId,
+              tableId: 0,
+              treatment: {
+                instructions: [
+                  { type: "QUEUE", queueId: 0 },
+                  { type: "OUTPUT", port: String(hop.outPort) },
+                ],
+              },
+              selector: {
+                criteria: dscpCriteria,
+              },
+            };
+
+            try {
+              await onosFetch(`/onos/v1/flows/${encodeURIComponent(hop.deviceId)}?appId=org.onosproject.rest`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(flowPayload),
+              });
+              installedCount++;
+            } catch (err) {
+              console.warn(`[DSCP Auto-Install] Failed on ${hop.deviceId}:`, err.message);
+            }
+          }
+        }
+      }
+    }
+    return installedCount;
+  } catch (err) {
+    console.error("[DSCP Auto-Install] Error:", err.message);
+    return 0;
+  }
+}
+
 // ── DSCP 46 Flow Verification ───────────────────────────────────────────────
 app.get("/api/onos/verify/dscp", async (req, res) => {
   try {
+    // Auto-ensure any active URLLC slices have Priority 41000 DSCP 46 flows installed
+    await ensureUrllcDscpFlows().catch(() => {});
+
     const flowsData = await onosFetch("/onos/v1/flows").catch(() => ({ flows: [] }));
     const allFlows = flowsData.flows || [];
     const dscpFlows = allFlows.filter((f) => {
       const criteria = f.selector?.criteria || [];
-      return criteria.some((c) => (c.type === "IP_DSCP" && c.ipDscp === 46) || (c.type === "IP_PROTO"));
+      return criteria.some((c) => c.type === "IP_DSCP" && (c.ipDscp === 46 || c.ipDscp === "46" || c.ipDscp === 0x2e));
     });
     const queueFlows = allFlows.filter((f) => {
       const instructions = f.treatment?.instructions || [];
-      return instructions.some((i) => i.type === "QUEUE" && i.queueId === 0);
+      return instructions.some((i) => i.type === "QUEUE" && (i.queueId === 0 || i.queueId === "0"));
     });
     // Dump OVS flows for DSCP matching from Mininet
     const { stdout: bridges } = await runMininetCmd("sudo ovs-vsctl list-br", 5000).catch(() => ({ stdout: "" }));
@@ -715,6 +939,15 @@ app.get("/api/onos/verify/dscp", async (req, res) => {
       },
       ovs: ovsFlowDumps,
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post(["/api/onos/verify/reprovision-dscp", "/api/onos-service/verify/reprovision-dscp"], async (req, res) => {
+  try {
+    const installed = await ensureUrllcDscpFlows();
+    res.json({ success: true, installedFlows: installed });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

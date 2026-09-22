@@ -269,6 +269,33 @@ describe("Slicing Service - Topology Info & Multi-Slice Host Discovery", () => {
     expect(dscpFlow[0]).toBe("of:0000000000000002");
   });
 
+  it("installs Priority 41000 DSCP 46 flow rule when URLLC slice is created by name without explicit type or template", async () => {
+    const config = {
+      name: "URLLC (Ultra-Reliable Low-Latency)",
+      bandwidth: 60000,
+      burstSize: 10000,
+      hosts: [
+        { mac: "00:00:00:00:00:01", ip: "10.0.0.1", deviceId: "of:0000000000000002", port: "1" },
+        { mac: "00:00:00:00:00:02", ip: "10.0.0.2", deviceId: "of:0000000000000002", port: "2" },
+      ],
+    };
+
+    const result = await createSlice(config);
+    expect(result.status).toBe("ACTIVE");
+    expect(result.type).toBe("low-latency");
+    expect(result.template).toBe("urllc");
+
+    const flowCalls = apiController.installOnosFlow.mock.calls;
+    const dscpFlow = flowCalls.find((call) => {
+      const flow = call[1];
+      const hasDscp = flow.selector?.criteria?.some((c) => c.type === "IP_DSCP" && c.ipDscp === 46);
+      const hasQueue0 = flow.treatment?.instructions?.some((inst) => inst.type === "QUEUE" && inst.queueId === 0);
+      return flow.priority === 41000 && hasDscp && hasQueue0;
+    });
+
+    expect(dscpFlow).toBeDefined();
+  });
+
   it("detects already-sliced hosts by IP, ID, or location even when live ONOS MAC differs from synthetic MAC", async () => {
     // Saved slice was created with synthetic MAC
     saveSlices([

@@ -627,7 +627,7 @@ export async function deleteIntent(appId, intentKey) {
 export async function installOnosFlow(deviceId, flowData) {
 	try {
 		const url = `/flows/${encodeURIComponent(deviceId)}?appId=org.onosproject.rest`;
-		const payload = flowData.flows ? flowData : { flows: [flowData] };
+		const payload = flowData.flows ? flowData.flows[0] : flowData;
 		const res = await onosApi.post(url, payload);
 		const loc = res.headers?.location || res.headers?.Location || "";
 		let id = null;
