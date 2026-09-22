@@ -12,7 +12,7 @@
  *   - Slice-aware ARP broadcast routing ensures instant peer discovery only within the slice.
  *   - Priority 39000 Drop Boundary ensures complete cross-slice isolation.
  *
- * Slice data is persisted in localStorage.
+ * Slice data is persisted authoritatively in backend SQLite (users.db).
  */
 import {
   getMeters,
@@ -25,9 +25,6 @@ import {
   deleteOnosFlow,
   getOnosFlows,
 } from "./api-controller";
-
-const STORAGE_KEY = "onos-network-slices";
-const VLAN_COUNTER_KEY = "onos-slice-vlan-counter";
 
 // ─── Predefined slice templates ──────────────────────────────────────────────
 export const SLICE_TEMPLATES = [
@@ -79,23 +76,37 @@ export const SLICE_TEMPLATES = [
 // ─── Network Capacity & Admission Control ───────────────────────────────────
 export const DEFAULT_TOTAL_CAPACITY_KBPS = 100000; // 100 MB/s (800 Mbps) default physical capacity
 
+let cachedCapacity = DEFAULT_TOTAL_CAPACITY_KBPS;
+
 export function getNetworkCapacity() {
-  const saved = localStorage.getItem("onos-slice-total-capacity");
-  if (saved) {
-    const parsed = Number(saved);
-    if (!isNaN(parsed) && parsed > 0) return parsed;
-  }
-  return DEFAULT_TOTAL_CAPACITY_KBPS;
+  return cachedCapacity;
+}
+
+export async function fetchNetworkCapacity() {
+  if (typeof window === "undefined") return cachedCapacity;
+  try {
+    const res = await fetch("/api/onos/slices/capacity");
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.totalCapacityKbps) {
+        cachedCapacity = Number(data.totalCapacityKbps);
+        return cachedCapacity;
+      }
+    }
+  } catch {}
+  return cachedCapacity;
 }
 
 export function setNetworkCapacity(kbps) {
   if (kbps && kbps > 0) {
-    localStorage.setItem("onos-slice-total-capacity", String(kbps));
-    fetch("/api/onos/slices/capacity", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ totalCapacityKbps: kbps }),
-    }).catch(() => {});
+    cachedCapacity = Number(kbps);
+    if (typeof window !== "undefined") {
+      fetch("/api/onos/slices/capacity", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ totalCapacityKbps: kbps }),
+      }).catch(() => {});
+    }
   }
 }
 
@@ -103,16 +114,21 @@ export function setNetworkCapacity(kbps) {
 
 function getNextVlanId() {
   const slices = loadSlices();
-  const usedVlans = new Set(slices.map((s) => s.vlanId).filter(Boolean));
-  let candidate = parseInt(localStorage.getItem(VLAN_COUNTER_KEY) || "100", 10);
+  const usedVlans = new Set(slices.map((s) => Number(s.vlanId)).filter(Boolean));
+  let candidate = 100;
   while (usedVlans.has(candidate)) {
     candidate++;
   }
-  localStorage.setItem(VLAN_COUNTER_KEY, String(candidate + 1));
   return candidate;
 }
 
-// ─── Local & SQLite persistence ──────────────────────────────────────────────
+// ─── Pure SQLite Persistence & In-Memory Runtime Cache ──────────────────────
+
+let cachedSlices = [];
+
+export function resetSliceCache() {
+  cachedSlices = [];
+}
 
 export function normalizeSlice(s) {
   if (!s || typeof s !== "object") return s;
@@ -136,39 +152,23 @@ export async function fetchSlicesFromDb() {
     if (res.ok) {
       const dbSlices = await res.json();
       if (Array.isArray(dbSlices)) {
-        const local = loadSlices();
-        // If DB returned slices, normalize and persist to local storage
-        if (dbSlices.length > 0) {
-          const normalized = dbSlices.map(normalizeSlice);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-          return normalized;
-        } else if (local.length > 0) {
-          // If DB is empty but localStorage has slices, sync local slices to DB
-          await saveSlices(local);
-          return local;
-        }
+        cachedSlices = dbSlices.map(normalizeSlice);
+        return cachedSlices;
       }
     }
   } catch (err) {
-    // Fallback to local storage if offline
+    console.warn("[Slicing] Failed fetching slices from SQLite backend:", err.message);
   }
-  return loadSlices();
+  return cachedSlices;
 }
 
 export function loadSlices() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw).map(normalizeSlice) : [];
-  } catch {
-    return [];
-  }
+  return [...cachedSlices];
 }
 
 export async function saveSlices(slices) {
   const normalizedSlices = Array.isArray(slices) ? slices.map(normalizeSlice) : [];
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedSlices));
-  } catch {}
+  cachedSlices = normalizedSlices;
   if (typeof window !== "undefined") {
     try {
       await Promise.all(
@@ -181,7 +181,7 @@ export async function saveSlices(slices) {
         )
       );
     } catch (err) {
-      console.warn("[Slicing] Failed to sync slices to backend DB:", err);
+      console.warn("[Slicing] Failed to sync slices to SQLite backend:", err);
     }
   }
   return normalizedSlices;

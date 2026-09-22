@@ -6,7 +6,7 @@ import {
   Gauge, HelpCircle, Wifi, WifiOff, Server, BarChart3,
   ArrowRight, ChevronDown, ChevronUp, Terminal, FileSearch,
 } from "lucide-react";
-import { getSlices, loadSlices } from "../api/slicingService";
+import { getSlices } from "../api/slicingService";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    STYLES
@@ -113,8 +113,7 @@ export default function SlicingVerification() {
         const stored = await getSlices();
         setLocalSlices(stored || []);
       } catch {
-        const stored = loadSlices();
-        setLocalSlices(stored || []);
+        setLocalSlices([]);
       }
     } catch (err) {
       console.warn("Summary fetch failed:", err);

@@ -318,11 +318,10 @@ const NetworkTopologySvc = {
 					});
 				});
 
-				// 3b. Complement with saved slice hosts (if not already captured live)
 				let savedSlices = [];
 				try {
-					const raw = localStorage.getItem("onos-network-slices");
-					if (raw) savedSlices = JSON.parse(raw);
+					const sRes = await fetch("/api/onos/slices");
+					if (sRes.ok) savedSlices = await sRes.json();
 				} catch {}
 
 				savedSlices.forEach((s) => {

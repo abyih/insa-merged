@@ -1,66 +1,59 @@
 # OpenStack Integration — Technical Documentation
+
 ## Integration with OpenDaylight (ODL) and ONOS Controllers
 
-> **Project**: INSA SDN Dashboard
-> **Subsystem**: Cloud Infrastructure Integration
+> **Project**: INSA SDN Dashboard  
+> **Subsystem**: Cloud Infrastructure & Dual-Controller Integration
 
 ---
 
 ## Table of Contents
 
-1. [Overview & Architecture](#1-overview--architecture)
-2. [Environment Setup](#2-environment-setup)
-3. [ODL-OpenStack Integration](#3-odl-openstack-integration)
-4. [ONOS-OpenStack/Mininet Integration](#4-onos-openstackmininet-integration)
-5. [Implementation Details](#5-implementation-details)
-6. [Challenges and Solutions](#6-challenges-and-solutions)
-7. [Limitations](#7-limitations)
+1. [Overview & Architecture](#1-overview--architecture)  
+2. [Environment Setup](#2-environment-setup)  
+3. [OpenStack Cloud Infrastructure Integration](#3-openstack-cloud-infrastructure-integration)  
+4. [OpenStack Network Slicing & QoS Enforcement Pipeline](#4-openstack-network-slicing--qos-enforcement-pipeline)  
+5. [OpenDaylight (ODL) SDN Integration](#5-opendaylight-odl-sdn-integration)  
+6. [ONOS Controller & Remote Mininet Integration](#6-onos-controller--remote-mininet-integration)  
+7. [Dual-Controller Architecture & Dynamic Switching](#7-dual-controller-architecture--dynamic-switching)  
+8. [Backend API Reference](#8-backend-api-reference)  
+9. [Challenges and Solutions](#9-challenges-and-solutions)  
+10. [Limitations](#10-limitations)
 
 ---
 
-## 1. Overview & Architecture
+## 1\. Overview & Architecture
 
-The project integrates with OpenStack cloud infrastructure through two SDN controllers:
+The OpenStack subsystem provides cloud infrastructure management, network slicing, and SDN telemetry across two independent SDN controllers: **OpenDaylight (ODL Karaf 0.23.1 Vanadium)** and **ONOS (2.7.0)**. 
+
+Because OpenStack's native networking (Neutron with OVN) operates alongside external SDN controllers, the architecture uses two dedicated Node.js backend middleware servers that bridge cloud resources, OpenFlow datapaths, and network emulation:
+
+| Backend | File | Port | Core Responsibilities |
+| :---- | :---- | :---- | :---- |
+| **DevStack / ODL Backend** | `server.js` | 5000 | Keystone v3 dynamic discovery, Nova/Neutron/Glance API proxying, OVN infrastructure health, OpenStack network slicing (Security Groups + direct OVS QoS), ODL RESTCONF telemetry & Table 250 shadow flows |
+| **ONOS Middleware Backend** | `server-onos.js` | 5001 | ONOS REST API proxying, remote Mininet SSH command execution, ONOS slice lifecycle & meter management, live in-namespace network verification (ping, iperf, queues), intent service proxy |
+
+Both backends share a unified SQLite database (`users.db`) for user access and slice configuration persistence.
+
+### Architectural Request Flow
+
+The frontend never communicates directly with raw OpenStack service endpoints, ODL, or ONOS. All requests are routed through dedicated backend proxy pipelines or the Vite dev server proxy:
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                        Frontend (React + Vite)                          │
-│                     Cloud.jsx  |  Topology Pages                        │
-└──────────┬──────────────────────────────┬────────────────────────────────┘
-           │ :5173 proxy                  │ :5173 proxy
-┌──────────▼──────────────┐    ┌──────────▼─────────────────┐
-│  server.js (port 5000)  │    │  server-onos.js (port 5001)│
-│  ──────────────────     │    │  ─────────────────────     │
-│  Keystone Auth (v3)     │    │  ONOS REST API Proxy      │
-│  Service Discovery      │    │  Mininet SSH Execution     │
-│  Nova (Compute)         │    │  OVS Queue Management      │
-│  Neutron (Network)      │    │  SQLite Slice Persistence  │
-│  Glance (Image)         │    │  Live Verification Tests   │
-│  OVN Infrastructure     │    │  Intent Service Proxy      │
-│  ODL HTTPS RESTCONF     │    │                            │
-│  LinkGuard (Socket.IO)  │    │                            │
-│  User Authentication    │    │                            │
-└──────────┬──────────────┘    └──────────┬─────────────────┘
-           │                              │
-┌──────────▼──────────────┐    ┌──────────▼─────────────────┐
-│  DevStack / OpenStack   │    │  ONOS Controller           │
-│  ──────────────────     │    │  Mininet VM (SSH)          │
-│  Keystone (Identity)    │    │  Open vSwitch (OVS)        │
-│  Neutron  (Networking)  │    │                            │
-│  Nova     (Compute)     │    │                            │
-│  Glance   (Image)       │    │                            │
-└─────────────────────────┘    └────────────────────────────┘
-           │
-┌──────────▼──────────────┐
-│  ODL Controller         │
-│  (HTTPS port 8443)      │
-│  RESTCONF API           │
-└─────────────────────────┘
+Frontend (React + Vite, port 5173)
+    │
+    ├── /api/openstack/*  ──► server.js (port 5000)      ──► Keystone / Nova / Neutron / Glance (DevStack)
+    ├── /api/slices/*     ──► server.js (port 5000)      ──► SQLite (users.db) + br-int (ovsDirect) + ODL (Table 250)
+    ├── /api/rests/*      ──► Vite Proxy (port 5173)     ──► ODL RESTCONF (port 8181)
+    │
+    ├── /api/onos/slices  ──► server-onos.js (port 5001) ──► SQLite (users.db)
+    ├── /api/onos/verify  ──► server-onos.js (port 5001) ──► Mininet VM (SSH port 22 -> mnexec)
+    └── /api/onos/*       ──► server-onos.js / Vite      ──► ONOS REST API (port 8181)
 ```
 
 ### Process Stability
 
-Both backend servers install global handlers to prevent process crashes from network failures:
+Both middleware servers implement global rejection and exception handlers to ensure transient network outages (e.g., DevStack VM sleep, temporary controller reboot, or SSH timeout) do not crash the Node.js process:
 
 ```javascript
 process.on("unhandledRejection", (reason) => {
@@ -71,662 +64,751 @@ process.on("uncaughtException", (err) => {
 });
 ```
 
-This ensures that transient network errors (e.g., OpenStack API timeouts, SSH connection failures) are logged but do not terminate the server processes.
-
 ---
 
-## 2. Environment Setup
+## 2\. Environment Setup
 
 ### Prerequisites
 
-| Component | Version / Platform | Purpose |
-|-----------|-------------------|---------|
-| **Operating System** | Linux (Ubuntu 26.04 LTS) | Host operating system |
-| **DevStack** | Latest stable branch | OpenStack single-node development deployment |
-| **Keystone** | v3 Identity API | Authentication and service catalog |
-| **Neutron** | ML2/OVN driver | Network virtualization and OpenFlow routing |
-| **Nova** | Compute API v2.1 | Virtual machine lifecycle management |
-| **Glance** | Image API v2 | Virtual machine image repository |
+| Software | Version | Purpose |
+| :---- | :---- | :---- |
+| **Operating System** | Linux (Ubuntu 24.04 LTS) | Host development and execution environment |
+| **Docker** | ≥ 24.x | Container runtime for ODL and ONOS SDN controllers |
+| **Node.js** | ≥ 20.x (tested with v26.7.0) | Backend middleware and frontend runtime |
+| **npm** | ≥ 10.x (tested with 11.19.0) | Package and dependency management |
+| **DevStack** | Stable branch | Single-node OpenStack deployment (Keystone, Nova, Neutron ML2/OVN, Glance) |
+| **OpenDaylight** | Karaf 0.23.1 (Vanadium) | SDN controller for flow telemetry and Table 250 shadow synchronization |
+| **ONOS** | 2.7.0 | SDN controller for network slicing and OpenFlow routing |
+| **Mininet VM** | Official pre-packaged VM (Ubuntu) | Network emulation with pre-compiled OVS kernel datapath |
+| **Python** | ≥ 3.12 | Intent service (sentence-transformers) and anomaly detectors |
+| **uv** | Latest | Fast Python virtual environment and package manager |
 
-#### DevStack Installation (on a dedicated VM or bare metal):
+---
+
+### Step 1 — Clone and Install Dependencies
+
+```sh
+git clone <repository-url> insa-merged
+cd insa-merged
+npm install
+
+# Set up Python intent and anomaly dependencies
+cd anomaly
+uv sync
+cd ..
+```
+
+---
+
+### Step 2 — DevStack Installation (on Dedicated VM or Host)
+
+DevStack is deployed on a dedicated KVM/QEMU virtual machine managed via `libvirt`, attached to the host's virtual bridge (`virbr0`, default subnet `192.168.122.0/24`).
 
 ```bash
-# 1. Create stack user
+# 1. Create dedicated stack user
 sudo useradd -s /bin/bash -d /opt/stack -m stack
 echo "stack ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/stack
 sudo -u stack -i
 
-# 2. Clone DevStack
+# 2. Clone DevStack repository
 git clone https://opendev.org/openstack/devstack
 cd devstack
 
-# 3. Create local.conf
+# 3. Create local.conf configuration
 cat > local.conf <<EOF
 [[local|localrc]]
 ADMIN_PASSWORD=secret
 DATABASE_PASSWORD=$ADMIN_PASSWORD
 RABBIT_PASSWORD=$ADMIN_PASSWORD
 SERVICE_PASSWORD=$ADMIN_PASSWORD
-HOST_IP=<your-ip>
+HOST_IP=<vm-ip-on-virbr0>
 EOF
 
-# 4. Run DevStack
+# 4. Execute stack script
 ./stack.sh
 ```
 
-#### Environment Variables (`.env` file in project root)
+Upon successful deployment, DevStack provides:
+- **Keystone**: Identity API v3 (`http://<vm-ip>/identity/v3`)
+- **Nova**: Compute API v2.1 (`http://<vm-ip>/compute/v2.1`)
+- **Neutron**: Networking API v2.0 with ML2/OVN mechanism driver (`http://<vm-ip>/networking/v2.0`)
+- **Glance**: Image API v2 (`http://<vm-ip>/image/v2`)
 
-The `.env` file configures all backend service connections. Below is the complete variable reference:
+---
 
-**OpenStack / DevStack Variables:**
+### Step 3 — OpenDaylight (ODL) Controller Setup
 
-| Variable | Example Value | Purpose |
-|----------|---------------|---------|
-| `KEYSTONE_URL` | `http://192.168.122.156/identity/v3` | Keystone Identity API v3 endpoint |
-| `OS_USERNAME` | `admin` | OpenStack authentication username |
-| `OS_PASSWORD` | `123456` | OpenStack authentication password |
-| `OS_PROJECT_NAME` | `admin` | OpenStack project/tenant name |
-| `OS_USER_DOMAIN_NAME` | `default` | Keystone user domain |
-| `OS_PROJECT_DOMAIN_NAME` | `default` | Keystone project domain |
-| `PORT` | `5000` | Backend server port for `server.js` |
+OpenDaylight uses **ODL Karaf 0.23.1 (Vanadium)**. Because official pre-built Docker Hub images are no longer published for modern ODL releases, ODL is built as a local Docker image based on Eclipse Temurin Java 21 (`eclipse-temurin:21-jre-jammy`).
 
-> **Note**: `NEUTRON_URL`, `NOVA_URL`, and `GLANCE_URL` are intentionally **not** required in `.env`. These are automatically discovered from the Keystone service catalog at authentication time (see [Dynamic Service Discovery](#dynamic-service-discovery-serverjs)).
+The Dockerfile and entrypoint script are provided in the repository under `docker/odl/`:
 
-**ONOS Controller Variables:**
+#### 1. Build the ODL Docker Image
+```bash
+# Build the ODL Vanadium Docker image from repository files
+docker build -t odl:latest -f docker/odl/Dockerfile docker/odl
+```
 
-| Variable | Example Value | Purpose |
-|----------|---------------|---------|
-| `ONOS_URL` | `http://localhost:8181` | ONOS REST API base URL |
-| `ONOS_USERNAME` | `onos` | ONOS authentication username |
-| `ONOS_PASSWORD` | `rocks` | ONOS authentication password |
+<details>
+<summary><b>View Dockerfile and entrypoint script specifications</b></summary>
 
-**Mininet SSH Variables:**
+**`docker/odl/Dockerfile`**:
+```dockerfile
+FROM eclipse-temurin:21-jre-jammy
 
-| Variable | Default Value | Purpose |
-|----------|---------------|---------|
-| `MININET_HOST` | `192.168.122.88` | Mininet VM IP address |
-| `MININET_USER` | `mininet` | SSH username on Mininet VM |
-| `MININET_SSH_KEY` | `~/.ssh/id_main` | Path to SSH private key |
+ARG ODL_VERSION=0.23.1
+ARG ODL_DOWNLOAD_URL=https://nexus.opendaylight.org/content/repositories/opendaylight.release/org/opendaylight/integration/karaf/${ODL_VERSION}/karaf-${ODL_VERSION}.tar.gz
+ENV ODL_HOME=/opt/opendaylight \
+    KARAF_HOME=/opt/opendaylight \
+    JAVA_OPTS="-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
 
-**Optional Variables:**
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tar \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --home-dir /opt/opendaylight --shell /bin/bash odl \
+    && mkdir -p /opt/opendaylight \
+    && curl -fsSL "$ODL_DOWNLOAD_URL" | tar -xz --strip-components=1 -C /opt/opendaylight \
+    && chown -R odl:odl /opt/opendaylight
 
-| Variable | Purpose |
-|----------|---------|
-| `ONOS_SERVER_PORT` | Override ONOS backend port (default: 5001) |
-| `INTENT_SERVICE_URL` | Override intent service URL (default: `http://127.0.0.1:5005`) |
-| `SMTP_EMAIL` | Gmail address for alert emails |
-| `SMTP_APP_PASSWORD` | Gmail app password for alert emails |
-| `ALERT_EMAIL` | Recipient address for security alerts |
-| `VITE_ODL_HOST` | Override ODL target for Vite proxy (default: `http://localhost:8181`) |
+WORKDIR /opt/opendaylight
 
-### ONOS Setup
+EXPOSE 8101 8181 6653 6640
+
+COPY entrypoint.sh /opt/opendaylight/entrypoint.sh
+RUN chmod +x /opt/opendaylight/entrypoint.sh
+ENTRYPOINT ["/opt/opendaylight/entrypoint.sh"]
+```
+
+**`docker/odl/entrypoint.sh`**:
+```bash
+#!/bin/bash
+set -e
+
+/opt/opendaylight/bin/karaf server &
+KARAF_PID=$!
+
+# Wait for Karaf client console to accept commands
+until /opt/opendaylight/bin/client -u karaf -p karaf "feature:list" > /dev/null 2>&1; do
+  sleep 3
+done
+
+# Install required features for RESTCONF, OpenFlow 1.3, and OVSDB
+/opt/opendaylight/bin/client -u karaf -p karaf "feature:install odl-restconf-all odl-restconf odl-restconf-openapi odl-ovsdb-southbound-impl odl-openflowplugin-flow-services odl-openflowplugin-southbound odl-l2switch-switch odl-ovsdb-all"
+
+wait $KARAF_PID
+```
+</details>
+
+#### 2. Create and Run the ODL Container (Initial Setup)
+```bash
+docker run -d --name odl \
+  -p 8101:8101 \
+  -p 8181:8181 \
+  -p 6653:6653 \
+  -p 6640:6640 \
+  odl:latest
+```
+
+**Port Mapping Breakdown**:
+- `8181`: RESTCONF API & OpenAPI UI (used by `server.js` and frontend proxy)
+- `8101`: Karaf SSH management console (`karaf` / `karaf`)
+- `6653`: OpenFlow 1.3 southbound port (for switch connections)
+- `6640`: OVSDB southbound port (for OVS bridge management)
+
+#### 3. Verify ODL Initialization & Health
+The entrypoint script automatically installs all required features (`odl-restconf-all`, `odl-openflowplugin-southbound`, `odl-ovsdb-all`, etc.) on first boot. Initial bundle startup takes approximately 30–60 seconds.
 
 ```bash
-# Option 1: Docker (recommended)
+# Verify RESTCONF endpoint responds (default credentials: admin / admin)
+curl -s -u admin:admin http://localhost:8181/rests/data/opendaylight-inventory:nodes | head -c 200
+
+# (Optional) Verify installed features via Karaf client:
+docker exec -it odl /opt/opendaylight/bin/client -u karaf -p karaf "feature:list -i"
+```
+
+#### 4. Daily Management (Start / Stop)
+```bash
+# Stop ODL
+docker stop odl
+
+# Start ODL
+docker start odl
+```
+
+---
+
+### Step 4 — ONOS Controller Setup
+
+ONOS is deployed using the official **ONOS 2.7.0** Docker image (`onosproject/onos:2.7.0`).
+
+#### 1. Download and Run the ONOS Container (Initial Setup)
+```bash
+# Pull official ONOS image
+docker pull onosproject/onos:2.7.0
+
+# Run ONOS with REST (8181), Karaf SSH CLI (8101), and OpenFlow (6653) ports exposed
 docker run -d --name onos \
-  -p 8181:8181 -p 6653:6653 -p 8101:8101 \
+  -p 8181:8181 \
+  -p 8101:8101 \
+  -p 6653:6653 \
+  -p 6640:6640 \
   onosproject/onos:2.7.0
-
-# Option 2: From source
-git clone https://gerrit.onosproject.org/onos
-cd onos
-bazel build onos
 ```
 
-Activate required ONOS apps:
+**Port Mapping Breakdown**:
+- `8181`: ONOS REST API & Web GUI (default credentials: `onos` / `rocks`)
+- `8101`: ONOS Apache Karaf SSH CLI (`ssh -p 8101 onos@localhost`)
+- `6653`: OpenFlow 1.3 southbound port (for Mininet switches)
+- `6640`: OVSDB management port
+
+#### 2. Wait for ONOS to Boot
+ONOS requires ~15–30 seconds to initialize its core OSGi bundles:
 ```bash
-# Via ONOS CLI (port 8101, user: onos, password: rocks)
-app activate org.onosproject.openflow
-app activate org.onosproject.fwd
-app activate org.onosproject.ofagent
+until curl -s -u onos:rocks http://localhost:8181/onos/v1/applications > /dev/null; do
+  echo "Waiting for ONOS to initialize..."
+  sleep 3
+done
+echo "ONOS is up and ready."
 ```
 
-### Mininet VM Setup (for ONOS integration)
+#### 3. Activate Required Applications
+ONOS starts with minimal features enabled. You must activate the OpenFlow provider, reactive forwarding, and proxy ARP (along with the OVSDB provider if managing bridges via port 6640):
 
+| Application | Identifier | Purpose |
+| :---- | :---- | :---- |
+| **OpenFlow Provider** | `org.onosproject.openflow` | Handles OpenFlow 1.3 switch connections and flow programming on port 6653 |
+| **Reactive Forwarding** | `org.onosproject.fwd` | Provides default hop-by-hop packet forwarding and initial topology learning |
+| **Proxy ARP** | `org.onosproject.proxyarp` | Intercepts and answers ARP/NDP requests, enabling inter-host resolution |
+| **OVSDB Provider** | `org.onosproject.ovsdb-base` | Handles OVSDB protocol communication for bridge and port management on port 6640 |
+
+**Option A — Via REST API (Recommended)**:
 ```bash
-# Install Mininet
-sudo apt-get install mininet
+# 1. OpenFlow southbound provider
+curl -u onos:rocks -X POST http://localhost:8181/onos/v1/applications/org.onosproject.openflow/active
 
-# Or download the Mininet VM image
-# Configure SSH access from the host
-ssh-keygen -t rsa -f ~/.ssh/id_main
-ssh-copy-id -i ~/.ssh/id_main mininet@<mininet-vm-ip>
+# 2. Reactive Forwarding (initial discovery)
+curl -u onos:rocks -X POST http://localhost:8181/onos/v1/applications/org.onosproject.fwd/active
+
+# 3. Proxy ARP / NDP (host address resolution)
+curl -u onos:rocks -X POST http://localhost:8181/onos/v1/applications/org.onosproject.proxyarp/active
+
+# 4. OVSDB Base (for OVS manager connection on port 6640)
+curl -u onos:rocks -X POST http://localhost:8181/onos/v1/applications/org.onosproject.ovsdb-base/active
 ```
 
-### Node.js Setup
+**Option B — Via ONOS CLI (Alternative)**:
+```bash
+ssh -p 8101 -o StrictHostKeyChecking=no onos@localhost \
+  "app activate org.onosproject.openflow; app activate org.onosproject.fwd; app activate org.onosproject.proxyarp; app activate org.onosproject.ovsdb-base"
+```
+
+#### 4. Verify ONOS Health
+```bash
+# Verify active applications
+curl -s -u onos:rocks http://localhost:8181/onos/v1/applications | grep -E "org.onosproject.(openflow|fwd|proxyarp|ovsdb-base)"
+
+# Verify connected devices (switches will appear once Mininet connects)
+curl -s -u onos:rocks http://localhost:8181/onos/v1/devices
+```
+
+#### 5. Daily Management (Start / Stop)
+```bash
+# Stop ONOS
+docker stop onos
+
+# Start ONOS
+docker start onos
+```
+
+---
+
+> [!IMPORTANT]
+> ### Controller Mutual Exclusion Rule
+> Both OpenDaylight and ONOS bind host ports **8181** (REST API) and **6653** (OpenFlow). They **cannot run simultaneously** on the same machine.
+>
+> Always stop one controller before starting the other:
+> ```bash
+> # To work with ODL:
+> docker stop onos 2>/dev/null || true
+> docker start odl
+>
+> # To work with ONOS:
+> docker stop odl 2>/dev/null || true
+> docker start onos
+> ```
+> Whenever you switch controllers, also re-point the OVS bridge on the Mininet VM (see [Section 7: Dual-Controller Architecture](#7-dual-controller-architecture--dynamic-switching)).
+
+---
+
+### Step 5 — Mininet Setup via Official Pre-packaged VM
+
+Mininet is deployed using the **official recommended virtual machine image** provided by the Mininet project ([mininet.org/download](http://mininet.org/download/)).
+
+#### Why the Official VM:
+- **Pre-configured environment**: Includes Mininet 2.3+, Open vSwitch (OVS), `mnexec`, `tc` (Linux Traffic Control), and testing utilities (`iperf`, `tcpdump`, `arping`) pre-installed.
+- **Kernel-level OVS datapath**: Includes the pre-compiled `openvswitch.ko` kernel module, ensuring reliable DSCP/TOS classification and HTB queue handling without kernel header mismatches.
+- **Namespace & daemon isolation**: Isolates the emulated network namespaces and Open vSwitch daemons from the host OS, preventing networking collisions with DevStack.
+
+#### VM Deployment & Passwordless SSH:
+The official VM image is deployed via `libvirt` on `virbr0` (`192.168.122.0/24`). Default credentials are `mininet` / `mininet` (with passwordless `sudo`).
+
+The ONOS backend server (`server-onos.js`) executes remote network commands using SSH:
 
 ```bash
-# Install Node.js dependencies
-npm install
+# Generate SSH key (if not present)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_main -N ""
 
-# Key dependencies:
-# express ^4.21.2 — Backend API server
-# axios ^1.7.9 — HTTP client for OpenStack APIs
-# cors ^2.8.5 — Cross-origin resource sharing
-# better-sqlite3 ^13.0.3 — SQLite for slice and user persistence
-# dotenv ^17.4.2 — Environment variable loading
-# bcryptjs ^3.0.3 — Password hashing for user authentication
-# jsonwebtoken ^9.0.3 — JWT token generation
-# socket.io ^4.8.3 — Real-time WebSocket communication (LinkGuard)
-# nodemailer ^10.0.10 — Email alert notifications
+# Copy public key to Mininet VM
+ssh-copy-id -i ~/.ssh/id_main mininet@192.168.122.88
+
+# Verify non-interactive execution
+ssh -i ~/.ssh/id_main mininet@192.168.122.88 "mn --version"
+```
+
+#### Connecting Mininet to the Active Controller:
+```bash
+# Connect to the active controller (IP is host's address from VM perspective)
+sudo mn --controller=remote,ip=192.168.122.1,port=6653 --topo=tree,depth=2,fanout=2 --switch=ovsk,protocols=OpenFlow13
+```
+
+---
+
+### Step 6 — Configure .env
+
+Create or update the `.env` file in the project root:
+
+```env
+# ==============================================================================
+# OpenStack (DevStack) Configuration
+# ==============================================================================
+KEYSTONE_URL=http://192.168.122.156/identity/v3
+OS_USERNAME=admin
+OS_PASSWORD=secret
+OS_PROJECT_NAME=admin
+OS_USER_DOMAIN_NAME=default
+OS_PROJECT_DOMAIN_NAME=default
+PORT=5000
+
+# ==============================================================================
+# OpenDaylight (ODL) Configuration
+# ==============================================================================
+ODL_URL=http://localhost:8181
+
+# ==============================================================================
+# ONOS Configuration
+# ==============================================================================
+ONOS_URL=http://localhost:8181
+ONOS_USERNAME=onos
+ONOS_PASSWORD=rocks
+ONOS_SERVER_PORT=5001
+
+# ==============================================================================
+# Mininet Remote Execution Configuration
+# ==============================================================================
+MININET_HOST=192.168.122.88
+MININET_USER=mininet
+MININET_SSH_KEY=~/.ssh/id_main
+
+# ==============================================================================
+# Intent Service
+# ==============================================================================
+INTENT_SERVICE_URL=http://127.0.0.1:5005
+```
+
+> **Note**: `NOVA_URL`, `NEUTRON_URL`, and `GLANCE_URL` are intentionally **omitted**. They are automatically learned from the Keystone service catalog upon authentication.
+
+---
+
+### Step 7 — Start Backend Services
+
+All services can be launched concurrently using the multi-service orchestrator script or npm:
+
+```sh
+# Option A: Start all services + Vite frontend together (Recommended)
+./start_services.sh --with-frontend
+
+# Option B: Start all backend services via npm
+npm run all:services
+
+# Option C: Start components individually
+npm run server        # Terminal 1: DevStack/ODL backend (port 5000)
+npm run server:onos   # Terminal 2: ONOS backend (port 5001)
+npm run dev           # Terminal 3: Vite React frontend (port 5173)
 ```
 
 ### Available npm Scripts
 
-| Script | Command | Services Started |
-|--------|---------|-----------------|
-| `npm run server` | `node --watch server.js` | DevStack/ODL backend server only (port 5000) |
-| `npm run server:onos` | `node --watch server-onos.js` | ONOS backend server only (port 5001) |
-| `npm run server:all` | `concurrently` | Both server.js and server-onos.js |
-| `npm run all` | `concurrently` | Vite frontend + DevStack server |
-| `npm run all:full` | `concurrently` | Vite frontend + both servers |
-| `npm run all:onos` | `concurrently` | Vite frontend + ONOS server |
-| `npm run all:onos:intent` | `concurrently` | Vite frontend + ONOS server + Intent service |
-| `npm run services` | `concurrently` | Both servers + RF detector + IF detector + Intent service |
-| `npm run all:services` | `concurrently` | All services + Vite frontend |
-| `npm run dev` | `vite` | Frontend dev server only (port 5173) |
+| Script | Command | Purpose |
+| :---- | :---- | :---- |
+| `npm run server` | `node --watch server.js` | DevStack & ODL integration server (port 5000) |
+| `npm run server:onos` | `node --watch server-onos.js` | ONOS & Mininet integration server (port 5001) |
+| `npm run server:all` | `concurrently "..."` | Runs both `server.js` and `server-onos.js` |
+| `npm run services` | `concurrently "..."` | Launches DevStack, ONOS, RF Anomaly, IF Anomaly, and Intent services |
+| `npm run all:services` | `concurrently "..."` | Launches all 5 backend services plus the Vite frontend |
+| `npm run dev` | `vite` | Starts frontend development server on port 5173 |
 
 ---
 
-## 3. ODL-OpenStack Integration
+## 3\. OpenStack Cloud Infrastructure Integration
 
-### ODL HTTPS Communication (`server.js`)
+### Dynamic Keystone Service Discovery
 
-The ODL Potassium release uses **HTTPS** (port 8443) by default. The `server.js` backend communicates with ODL via a dedicated `odlRequest()` helper:
-
-```javascript
-const ODL_HOST = "localhost";
-const ODL_PORT = 8443;
-const ODL_AUTH = "Basic " + Buffer.from("admin:admin").toString("base64");
-
-function odlRequest(reqPath, method = "GET", body = null) {
-    const req = https.request({
-        hostname: ODL_HOST,
-        port: ODL_PORT,
-        path: reqPath,
-        method,
-        rejectUnauthorized: false,  // Accept self-signed TLS certificates
-        headers: {
-            Authorization: ODL_AUTH,
-            "Content-Type": "application/json",
-        },
-    }, callback);
-}
-```
-
-**Key implementation detail**: The `rejectUnauthorized: false` option is required because ODL Potassium ships with self-signed TLS certificates. Without this setting, Node.js rejects the connection.
-
-### Dynamic Service Discovery (`server.js`)
-
-The server implements **automatic Keystone-based service discovery**. On first token request:
-
-1. Authenticates with Keystone using password credentials
-2. Parses the service catalog from the token response
-3. **Dynamically learns** the URLs for Nova, Neutron, and Glance from the catalog endpoints
-4. If Keystone is on localhost, rewrites remote service URLs to use localhost hostname
-
-**Keystone Authentication Payload**:
-
-```json
-{
-  "auth": {
-    "identity": {
-      "methods": ["password"],
-      "password": {
-        "user": {
-          "name": "<OS_USERNAME>",
-          "password": "<OS_PASSWORD>",
-          "domain": { "name": "<OS_USER_DOMAIN_NAME>" }
-        }
-      }
-    },
-    "scope": {
-      "project": {
-        "name": "<OS_PROJECT_NAME>",
-        "domain": { "name": "<OS_PROJECT_DOMAIN_NAME>" }
-      }
-    }
-  }
-}
-```
-
-**Service Discovery Algorithm**:
+Rather than relying on brittle, static URL configurations in `.env`, `server.js` dynamically queries Keystone's service catalog upon authentication to discover current API endpoints:
 
 ```
-POST to KEYSTONE_URL/auth/tokens
-  → Extract x-subject-token header (the token itself)
-  → Parse token.catalog from JSON body
-  → For each service type (compute, network, image):
-       → Find the "public" interface endpoint (or first available)
-       → If Keystone is on localhost:
-            → Rewrite the endpoint's hostname to match Keystone's hostname
-            → (e.g., http://172.24.4.2:8774 → http://localhost:8774)
-       → For Neutron: ensure URL ends with /v2.0
-       → For Glance: ensure URL ends with /v2
-  → Cache token with expiry time
+POST $KEYSTONE_URL/auth/tokens
+  Headers: Content-Type: application/json
+  Body: { auth: { identity: { methods: ["password"], ... } } }
+  
+Response:
+  Header: X-Subject-Token (cached token)
+  Body: token.catalog[]
+    ├── type: "compute"  ──► Nova URL (e.g., http://<ip>/compute/v2.1)
+    ├── type: "network"  ──► Neutron URL (e.g., http://<ip>/networking/v2.0)
+    └── type: "image"    ──► Glance URL (e.g., http://<ip>/image/v2)
 ```
 
-### Token Caching
+#### Discovery Algorithm (`server.js`):
+1. Authenticates against Keystone Identity v3 using configured credentials.
+2. Extracts the `X-Subject-Token` authentication token from response headers.
+3. Iterates over `token.catalog` entries matching `compute`, `network`, and `image` service types.
+4. Selects the `public` interface endpoint URL.
+5. If Keystone is accessed via `localhost`, rewrites remote hostnames in the catalog to `localhost` to maintain connectivity in port-forwarded setups.
+6. Ensures necessary version suffixes (`/v2.0` for Neutron, `/v2` for Glance) are normalized.
 
-Tokens are cached with their expiry time. A new token is only requested when the cached token will expire within 30 seconds:
-
+### Token Caching and Automatic Renewal
+Keystone tokens are stored in an in-memory cache with an expiration timestamp:
 ```javascript
 let tokenCache = { token: null, expiresAt: 0 };
-// Reuse if: tokenCache.expiresAt > Date.now() + 30000
+```
+Tokens are reused until `expiresAt <= Date.now() + 30000` (a 30-second safety window), eliminating redundant authentication overhead on every API call.
+
+### Compute (Nova) Integration
+- **Server Details**: Fetches instances via `GET $NOVA_URL/servers/detail`, extracting hypervisor host, flavor IDs, status, power state, and attached networks.
+- **Flavor & Keypair Resolution**: Maps flavor IDs to human-readable RAM/vCPU specs and verifies SSH key availability.
+- **VNC Console Access**: Dynamically generates noVNC web URLs via `POST $NOVA_URL/servers/{id}/action` with payload `{"os-getVNCConsole": {"type": "novnc"}}`, supporting remote desktop interaction directly within the dashboard.
+
+### Networking (Neutron & OVN) Integration
+- **Virtual Topologies**: Retrieves networks, subnets, routers, ports, and floating IPs.
+- **Port Matching**: Associates Neutron ports (`device_owner = "compute:nova"`) with VM UUIDs (`device_id`).
+- **OVN Infrastructure Health (`GET /api/openstack/ovn-health`)**: Executes `sudo -n ovn-nbctl show` directly on the host to monitor logical routers, logical switches, OVN chassis bindings, and database connectivity.
+
+### Unified Cloud Dashboard Summary (`GET /api/openstack/summary`)
+The `/api/openstack/summary` endpoint provides a consolidated status payload for the UI dashboard:
+- Total and active instance counts.
+- Aggregated network, subnet, and floating IP allocation statistics.
+- Hypervisor CPU and memory allocation ratios.
+- Controller health and connectivity states.
+
+---
+
+## 4\. OpenStack Network Slicing & QoS Enforcement Pipeline
+
+Network slicing on OpenStack partitions shared cloud resources into isolated virtual slices (`openstack_slices` table in `users.db`), each defined by a name, assigned VMs, an isolation level (`STANDARD` or `STRICT`), and guaranteed bandwidth limits.
+
+```
+                      Slice Provisioning Pipeline (OpenStack)
+                                         │
+        ┌────────────────────────────────┴────────────────────────────────┐
+        ▼                                                                 ▼
+[Isolation Layer]                                                [Bandwidth & QoS Layer]
+        │                                                                 │
+  STANDARD Isolation:                                            Rate Ceiling (Max Bandwidth):
+    • Create Neutron Security Group                                • Direct ovs-ofctl add-meter on br-int
+    • Intra-slice self-referencing ALLOW rule                      • Priority 600 flow in Table 250
+    • Attach SG to slice VM ports                                         │
+        │                                                        Rate Floor (Min Bandwidth):
+  STRICT Isolation:                                                • Direct ovs-vsctl HTB Queue on VM port
+    • Neutron SG isolation (above)                                 • Guaranteed min-rate scheduling
+    • PLUS: Table 250 Priority 700 explicit DROP                          │
+      flows on br-int for all other slice IPs                    Telemetry & Observability:
+                                                                   • Table 250 shadow flow pushed to ODL
 ```
 
-### OpenStack API Proxying
+### 1. Isolation Enforcement
 
-All OpenStack API calls go through authenticated helper functions:
+#### STANDARD Isolation:
+1. Creates a dedicated Neutron security group: `sg-slice-<sliceId>`.
+2. Adds a self-referencing ingress rule:
+   ```json
+   {
+     "security_group_rule": {
+       "security_group_id": "<sg-id>",
+       "direction": "ingress",
+       "ethertype": "IPv4",
+       "remote_group_id": "<sg-id>"
+     }
+   }
+   ```
+3. Attaches this security group to every Neutron port owned by the slice VMs. Because OpenStack security groups enforce an implicit default-deny policy, VMs within the slice communicate freely with each other while all outside traffic is blocked.
 
+#### STRICT Isolation (Defense-in-Depth):
+In addition to the Neutron security group, the server installs explicit OpenFlow drop flows directly into Open vSwitch integration bridge (`br-int`) via `ovsDirect.js`:
+```bash
+sudo ovs-ofctl -O OpenFlow13 add-flow br-int \
+  "table=250,priority=700,ip,nw_src=<other_slice_vm_ip>,actions=drop"
+```
+This guarantees hardware/switch-level drops for foreign slice packets, bypassing higher-layer network namespaces.
+
+---
+
+### 2. Direct OVS QoS Enforcement (`ovsDirect.js`)
+
+In standard DevStack environments, Neutron QoS minimum bandwidth rules cannot be applied because Nova Placement lacks compute bandwidth inventory reports. Furthermore, ODL's RESTCONF meter creation API exhibits a deserializer bug in modern OpenFlow builds.
+
+To achieve genuine bandwidth rate floors and ceilings, the system enforces QoS directly on Open vSwitch (`br-int`) using `ovsDirect.js`:
+
+#### A. Rate Ceiling Enforcement (Meters via `ovs-ofctl`):
 ```javascript
-const osFetch = async (url, options = {}) => {
-    const token = await getToken();
-    return fetch(url, { headers: { "X-Auth-Token": token } });
-};
+// ovsDirect.enforceBandwidthDirect(vmIp, meterId, rateKbps)
+// 1. Adds OpenFlow meter with drop band
+`ovs-ofctl -O OpenFlow13 add-meter br-int "meter=${meterId},kbps,burst,band=type=drop,rate=${rateKbps},burst_size=${burst}"`
 
-const osJson = async (url, options = {}) => {
-    const response = await osFetch(url, options);
-    return response.json();
-};
+// 2. Adds Table 250 classification flow matching VM IP
+`ovs-ofctl -O OpenFlow13 add-flow br-int "table=250,priority=600,ip,nw_src=${vmIp},actions=meter:${meterId},CONTROLLER:60"`
 ```
 
-### Implemented OpenStack Operations
-
-| Endpoint | Method | Operation |
-|----------|--------|-----------|
-| `/api/openstack/ping` | GET | Diagnostic: test Keystone connectivity, show discovered service URLs |
-| `/api/openstack/cloud-summary` | GET | Full dashboard: instances, networks, routers, ports, subnets, security rules |
-| `/api/openstack/console/:serverId` | GET | noVNC console URL (Nova 2.6+ with legacy fallback) |
-| `/api/openstack/servers/:id/action` | POST | Start / Stop / Reboot instances |
-| `/api/openstack/vms/:id` | DELETE | Delete instances |
-| `/api/openstack/create-vm` | POST | Create instances (with flavor, image, network resolution) |
-| `/api/openstack/create-network` | POST | Create networks with auto-subnet |
-
-### Cloud Summary Data Enrichment (`server.js`)
-
-The `/api/openstack/cloud-summary` endpoint aggregates data from multiple OpenStack APIs:
-
-1. **Nova** `/servers/detail` — All instances with full details
-2. **Neutron** `/networks` — OVN logical switches
-3. **Neutron** `/routers` — Virtual routers
-4. **Neutron** `/ports` — Port bindings (maps instances to networks)
-5. **Neutron** `/subnets` — CIDR and IP pool information
-6. **Neutron** `/security-group-rules` — Security policy rules
-7. **OVN** `ovn-nbctl show` — Infrastructure health check
-
-Virtual machines are enriched with:
-- IP address (from port fixed_ips or server addresses)
-- Network name
-- Availability zone
-- Logical port and logical switch (Neutron port → `neutron-<network_id>`)
-
-### User Authentication System (`server.js`)
-
-The backend includes a user authentication system backed by SQLite:
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Database** | `better-sqlite3` (`users.db`) | User storage |
-| **Password hashing** | `bcryptjs` | Secure password storage |
-| **Login endpoint** | `POST /api/login` | Username/password authentication |
-| **Failed login alerts** | `nodemailer` | Email notification on failed attempts |
-
-```
-POST /api/login { "username": "...", "password": "..." }
-  → Look up user in SQLite
-  → bcrypt.compare(password, password_hash)
-  → Success: { success: true }
-  → Failure: Send alert email + { success: false }
-```
-
-### LinkGuard Real-Time Monitoring (`server.js`)
-
-The server integrates a **LinkGuard** module that provides real-time network security monitoring via Socket.IO:
-
+#### B. Rate Floor Enforcement (HTB Queues via `ovs-vsctl`):
 ```javascript
-import linkguardRouter, { startPolling } from "./linkguard.js";
-
-// Mount LinkGuard routes under /api/security
-app.use("/api/security", linkguardRouter);
-
-// Start polling once Keystone is authenticated
-const bootstrap = async () => {
-    await getToken();
-    startPolling(server);
-    server.listen(port);
-};
-```
-
-LinkGuard polls the SDN topology periodically and pushes updates to connected frontend clients via WebSocket, enabling real-time topology change detection and security event notifications.
-
-### Infrastructure Health Check (`server.js`)
-
-```javascript
-async function checkInfrastructureStatus() {
-    // 1. Test Neutron API connectivity
-    await osJson(`${NEUTRON_URL}/networks?limit=1`);
-    
-    // 2. Test OVN NB/SB database connectivity
-    execFile("sudo", ["ovn-nbctl", "show"], ...);
-}
+// ovsDirect.configurePortQueue(portName, minRateBps, maxRateBps)
+// Configures real Linux HTB qdisc and queues on the VM's TAP interface
+`ovs-vsctl set port ${portName} qos=@newqos -- \
+  --id=@newqos create qos type=linux-htb other_config:max-rate=${maxRateBps} queues:0=@q0 -- \
+  --id=@q0 create queue other_config:min-rate=${minRateBps} other_config:max-rate=${maxRateBps}`
 ```
 
 ---
 
-## 4. ONOS-OpenStack/Mininet Integration
+### 3. Automated Drift Detection & 30-Second Reconciliation Loop
 
-### ONOS REST API Proxy (`server-onos.js`)
+Open vSwitch kernel datapath configurations and HTB queues are volatile. If an administrator runs `mn -c` or the OVS daemon restarts, queues and meters are lost.
 
-All ONOS API calls are proxied through an authenticated helper:
+`server.js` executes a background **reconciliation loop every 30 seconds**:
+1. Queries the SQLite database for all active OpenStack slices.
+2. Checks whether each slice's OVS meter and HTB queue are still present via `ovsDirect.isQueueConfigured()`.
+3. If drift is detected, automatically re-executes `ovsDirect.enforceBandwidthDirect()` and `ovsDirect.configurePortQueue()` without requiring manual administrator intervention.
+
+---
+
+## 5\. OpenDaylight (ODL) SDN Integration
+
+OpenDaylight (ODL Karaf 0.23.1 Vanadium) provides SDN telemetry, flow counters, and network visibility.
+
+### RESTCONF Telemetry Pipeline (`odlSync.js`)
+All communication with ODL uses the standard RESTCONF HTTP API on port **8181** with Basic Authentication (`admin:admin`):
+
+```javascript
+const ODL_BASE = process.env.ODL_URL || "http://localhost:8181";
+const ODL_AUTH = "Basic " + Buffer.from("admin:admin").toString("base64");
+const SHADOW_TABLE = 250;
+```
+
+### Automatic `br-int` Node Discovery
+The integration automatically locates OpenStack's `br-int` switch inside ODL's inventory datastore (`GET /rests/data/opendaylight-inventory:nodes?content=nonconfig`):
+- Filters nodes by manufacturer `Nicira, Inc.`
+- Verifies the node has no datapath description (Mininet switches always declare descriptions like `s1` or `s2`, whereas native OVS `br-int` leaves this null or `None`).
+
+### Table 250 Shadow Flow Architecture
+OpenStack's OVN ML2 driver exclusively owns OpenFlow tables `0` through `99` on `br-int`. Any modification to those tables risks disrupting cloud packet forwarding.
+
+The system isolates all ODL flow rules into **Table 250**:
+- **Security Rule Shadow Flows (Priority 500)**: Installed when OpenStack security rules or slices are provisioned. Action is `CONTROLLER:60` (send-to-controller). These flows match traffic passing through the bridge and increment telemetry byte/packet counters in ODL without altering real forwarding paths.
+- **Slice Metering Shadow Flows (Priority 600)**: Links slice VM IP matching to ODL observability counters.
+
+### VM-to-ODL Topology Mapping (`/api/openstack/vm-topology-map`)
+This endpoint bridges compute and SDN layers:
+1. Queries Nova servers and Neutron ports.
+2. Calculates the Linux TAP interface name corresponding to each VM port:
+   $$\text{Interface Name} = \text{"tap"} + \text{port.id}[0..10]$$
+3. Queries ODL RESTCONF for `br-int`'s active `node-connector` inventory.
+4. Matches TAP interface names against ODL connectors, allowing the UI to display live switch-port mappings for every cloud VM.
+
+---
+
+## 6\. ONOS Controller & Remote Mininet Integration
+
+The ONOS subsystem (`server-onos.js`, port 5001) manages emulated multi-switch topologies, end-to-end network slicing, and verification testing.
+
+### ONOS REST API Client
+All calls to ONOS use HTTP Basic Auth (`onos:rocks`) with a strict 5-second timeout via `AbortSignal.timeout(5000)`:
 
 ```javascript
 const onosFetch = async (apiPath, options = {}) => {
-    const headers = {
-        Authorization: "Basic " + Buffer.from("onos:rocks").toString("base64"),
-        Accept: "application/json",
-    };
-    return fetch(`${ONOS_URL}${apiPath}`, {
-        ...options, headers,
-        signal: AbortSignal.timeout(5000)
-    });
+  const headers = {
+    Authorization: "Basic " + Buffer.from("onos:rocks").toString("base64"),
+    Accept: "application/json",
+  };
+  return fetch(`${ONOS_URL}${apiPath}`, {
+    ...options,
+    headers,
+    signal: AbortSignal.timeout(5000),
+  });
 };
 ```
 
-The `AbortSignal.timeout(5000)` ensures that slow or unreachable ONOS queries are terminated after 5 seconds, preventing indefinite hangs.
-
-### ONOS Summary Endpoint (`server-onos.js`)
-
-The `/api/onos/summary` endpoint aggregates:
-- ONOS hosts → Discovered hosts with IP, MAC, VLAN, location
-- ONOS devices → OpenFlow switches with availability status
-- ONOS links → Inter-switch connections
-- ONOS flows → Installed flow rules
-- ONOS meters → Active bandwidth meters
-- ONOS cluster → Controller cluster node info
-
-### Mininet SSH Command Execution (`server-onos.js`)
-
-Commands are executed inside the Mininet VM via SSH. The SSH configuration supports both remote and local Mininet installations:
+### Remote Mininet SSH Execution Engine (`runMininetCmd`)
+Because Mininet runs inside an isolated VM, commands must execute within specific host network namespaces. `server-onos.js` executes remote commands by chaining SSH, `pgrep`, and `mnexec`:
 
 ```javascript
-const MININET_HOST = process.env.MININET_HOST || "192.168.122.88";
-const MININET_USER = process.env.MININET_USER || "mininet";
-const MININET_SSH_KEY = process.env.MININET_SSH_KEY
-    || path.join(process.env.HOME, ".ssh", "id_main");
-
-async function runMininetCmd(command, timeout = 30000) {
-    if (MININET_HOST !== "localhost" && MININET_HOST !== "127.0.0.1") {
-        const sshCmd = `ssh -i "${MININET_SSH_KEY}" \
-            -o StrictHostKeyChecking=no \
-            -o LogLevel=ERROR \
-            -o ConnectTimeout=5 \
-            ${MININET_USER}@${MININET_HOST} '${command}'`;
-        return execPromise(sshCmd, { timeout });
-    }
-    return execPromise(command, { timeout });
-}
+// Step 1: Find host PID on Mininet VM
+// Step 2: Execute command inside host namespace
+const fullCmd = `ssh -i ${MININET_SSH_KEY} -o StrictHostKeyChecking=no ${MININET_USER}@${MININET_HOST} "sudo mnexec -a \\$(pgrep -f 'mininet:${host}$') ${escapedCmd}"`;
 ```
 
-For host-namespace commands (ping, iperf inside Mininet hosts):
+### Live In-Namespace Verification Endpoints
 
-```javascript
-async function execInHost(hostname, command, timeout = 30000) {
-    const pid = await findHostPid(hostname);  // pgrep -f "mininet:h1"
-    return runMininetCmd(`sudo mnexec -a ${pid} ${command}`, timeout);
-}
+| Endpoint | Method | Action |
+| :---- | :---- | :---- |
+| `/api/onos/verify/ping` | `POST` | Executes `ping -c 3 -W 2 <target_ip>` inside source host namespace; parses RTT min/avg/max and packet loss % |
+| `/api/onos/verify/iperf` | `POST` | Spawns background `iperf -s` on target host, runs `iperf -c <target_ip> -t 3 -y C` on source host, extracts throughput in Mbps |
+| `/api/onos/verify/queues` | `GET` | Runs `tc -s qdisc show` and `tc -s class show` across all bridge ports to report live packet/drop counts |
+| `/api/onos/flows/check` | `GET` | Dumps OpenFlow flows across all switches to verify priority rules (39000 drop, 40000 unicast, 41000 URLLC) |
+
+---
+
+## 7\. Dual-Controller Architecture & Dynamic Switching
+
+### Controller Switching Procedure
+
+OpenDaylight and ONOS both bind ports **8181** (REST API) and **6653** (OpenFlow). They **cannot run simultaneously**. To switch between them:
+
+#### 1. Stop Current Controller & Start Target:
+```bash
+# Switch from ONOS to ODL:
+docker stop onos
+docker start odl
+
+# Switch from ODL to ONOS:
+docker stop odl
+docker start onos
 ```
 
-### Intent Service Proxy (`server-onos.js`)
+#### 2. Re-point Open vSwitch Controller Connection:
+On the Mininet VM (or host bridge):
+```bash
+sudo ovs-vsctl del-controller br-int
+sudo ovs-vsctl set bridge br-int protocols=OpenFlow13
+sudo ovs-vsctl set-manager ptcp:6640:127.0.0.1 tcp:192.168.122.1:6640
+sudo ovs-vsctl set-controller br-int tcp:192.168.122.1:6653
+```
 
-The ONOS backend server proxies requests to the local Neural Intent Service (port 5005):
+#### 3. Verify Connection:
+```bash
+sudo tail -n 5 /var/log/openvswitch/ovs-vswitchd.log | grep 6653
+```
 
-| Endpoint | Backend Target | Timeout |
-|----------|---------------|---------|
-| `GET /api/onos/intent/health` | `GET http://127.0.0.1:5005/health` | 3s |
-| `POST /api/onos/intent/compile` | `POST http://127.0.0.1:5005/compile` | 8s |
-
-If the intent service is unreachable, the proxy returns HTTP 503 with a hint message suggesting the startup command.
-
-### QoS Management Endpoints (`server-onos.js`)
-
-| Endpoint | Method | Operation |
-|----------|--------|-----------|
-| `POST /api/onos/qos/setup` | POST | Run QoS setup script on Mininet VM (supports `ports` array or `--auto`) |
-| `GET /api/onos/qos/status` | GET | Query OVS QoS configuration via `ovs-vsctl list qos` |
-
-### Vite Proxy Configuration (`vite.config.js`)
-
-The frontend proxy routes requests to the correct backend. The complete proxy routing table:
-
-| Frontend Path | Backend Target | Timeout | Purpose |
-|---------------|---------------|---------|---------|
-| `/api/rests/*` | ODL `:8181` | 5s | ODL RESTCONF (RFC 8040) |
-| `/api/restconf/*` | ODL `:8181` | 5s | ODL Legacy RESTCONF |
-| `/api/onos/slices/*` | `server-onos.js :5001` | 10s | ONOS slice persistence |
-| `/api/onos/intent/*` | `server-onos.js :5001` | 10s | Neural intent service proxy |
-| `/api/onos/qos/*` | `server-onos.js :5001` | 10s | QoS management |
-| `/api/onos/summary` | `server-onos.js :5001` | 10s | ONOS topology summary |
-| `/api/onos/verify/*` | `server-onos.js :5001` | 30s | Live verification tests |
-| `/api/onos-service/*` | `server-onos.js :5001` | 10s | Rewrites to `/api/onos/*` |
-| `/api/onos/*` | ONOS `:8181` | 5s | Direct ONOS REST API (with Basic Auth injection) |
-| `/api/openstack/*` | `server.js :5000` | 15s | OpenStack proxy |
-| `/api/slices/*` | `server.js :5000` | 60s | OpenStack slice management |
-| `/api/slice-manager/*` | `server.js :5000` | 15s | Slice manager operations |
-| `/api/settings/*` | `server.js :5000` | 15s | Application settings |
-| `/api/glance/*` | `server.js :5000` | 30s | Glance image API |
-| `/api/tls/*` | `server.js :5000` | 15s | TLS configuration |
-| `/api/security/*` | `server.js :5000` | 15s | LinkGuard security (WebSocket) |
-| `/api/login` | `server.js :5000` | 10s | User authentication |
-
-**Proxy Details**:
-- ODL and direct ONOS proxies strip the `www-authenticate` header from responses to prevent browser authentication popups
-- The ONOS direct proxy (`/api/onos/*`) injects Basic Auth credentials automatically
-- The OpenStack proxy includes error handling that returns HTTP 502 with a JSON error if the backend is restarting
-
-### Dual-Controller Auto-Detection (`api-controller.js`)
-
-The frontend automatically detects whether ONOS or ODL is the active controller:
+### Frontend Auto-Detection (`src/api/api-controller.js`)
+The React frontend dynamically detects which controller is currently responsive:
 
 ```javascript
 async function detectController() {
-    try {
-        const res = await onosApi.get("/devices");
-        if (res.data?.devices) return "onos";
-    } catch { /* not ONOS */ }
-    return "odl";
+  try {
+    const res = await onosApi.get("/devices");
+    if (res.data?.devices) return "onos";
+  } catch {
+    // ONOS offline, fallback to ODL
+  }
+  return "odl";
 }
 ```
+All UI service calls (`getDevices()`, `getHosts()`, `getLinks()`, `getMeters()`) transparently dispatch to the active controller backend without requiring page reloads or configuration changes.
 
-This allows the frontend to adapt its API calls, component rendering, and feature availability based on which controller is online.
+### Vite Proxy Configuration Matrix (`vite.config.js`)
 
----
-
-## 5. Implementation Details
-
-### Token Lifecycle
-
-```
-[Frontend Request] → [server.js] → getToken()
-                                     ├── Cache valid? → Return cached token
-                                     └── Cache expired? → POST to Keystone
-                                                            ├── Get x-subject-token header
-                                                            ├── Parse service catalog
-                                                            ├── Learn Nova/Neutron/Glance URLs
-                                                            ├── Cache token + expiry + projectId
-                                                            └── Return token
-```
-
-### VM Console Access (noVNC)
-
-Two methods are tried in sequence:
-1. **Modern API** (Nova 2.6+): `POST /servers/{id}/remote-consoles` with `OpenStack-API-Version: compute 2.6`
-2. **Legacy Fallback**: `POST /servers/{id}/action` with `os-getVNCConsole`
-
-### SQLite Persistence for ONOS Slices
-
-`server-onos.js` uses `better-sqlite3` for persistent slice storage:
-
-```sql
-CREATE TABLE onos_slices (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    slice_type TEXT,
-    color TEXT,
-    vlan_id INTEGER,
-    bandwidth_kbps INTEGER,
-    burst_kbps INTEGER,
-    hosts TEXT,          -- JSON array
-    status TEXT DEFAULT 'ACTIVE',
-    meter_ids TEXT,      -- JSON object
-    flow_rule_ids TEXT,  -- JSON array
-    priority INTEGER DEFAULT 40000,
-    created_at TEXT,
-    updated_at TEXT
-);
-```
-
-### SQLite Persistence for OpenStack Slices
-
-`server.js` uses a separate `slices` table for OpenStack-based network slicing:
-
-```sql
-CREATE TABLE slices (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    project_id TEXT,
-    network_id TEXT,
-    network_name TEXT,
-    vm_ids TEXT,              -- JSON array
-    slice_type TEXT,
-    bandwidth_min TEXT,
-    bandwidth_max TEXT,
-    priority TEXT,
-    isolation_level TEXT,
-    latency_requirement TEXT,
-    status TEXT DEFAULT 'ACTIVE',
-    qos_status TEXT DEFAULT 'unsupported',
-    isolation_status TEXT DEFAULT 'not_configured',
-    allocated_mbps REAL DEFAULT 0,
-    color TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Slice Manager Configuration
-
-```sql
-CREATE TABLE slice_manager_config (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    total_capacity_mbps REAL NOT NULL DEFAULT 1000,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Bootstrap & Service Discovery Flow
-
-```javascript
-const bootstrap = async () => {
-    // 1. Authenticate with Keystone
-    await getToken();
-    // 2. Service catalog is parsed, URLs are learned
-    // 3. Start Socket.IO polling for LinkGuard
-    startPolling(server);
-    // 4. Listen on port 5000
-    server.listen(port);
-};
-```
-
-### OpenStack API Call Flow
-
-```
-Frontend → Vite Proxy (:5173) → server.js (:5000) → getToken() → Keystone
-                                                   → osFetch(url) → Nova/Neutron/Glance
-                                                   → response → Frontend
-```
+| URL Prefix | Destination Target | Handled By |
+| :---- | :---- | :---- |
+| `/api/openstack` | `http://localhost:5000` | DevStack Server (`server.js`) |
+| `/api/slices` | `http://localhost:5000` | DevStack / OpenStack Slicing (`server.js`) |
+| `/api/rests` | `http://localhost:8181` | OpenDaylight RESTCONF Direct Proxy |
+| `/api/onos/verify` | `http://localhost:5001` | ONOS Middleware Server (`server-onos.js`) |
+| `/api/onos/slices` | `http://localhost:5001` | ONOS Slicing SQLite (`server-onos.js`) |
+| `/api/onos` | `http://localhost:8181` | ONOS REST API Proxy |
 
 ---
 
-## 6. Challenges and Solutions
+## 8\. Backend API Reference
 
-This section documents the key engineering challenges encountered during development and the solutions implemented to address them.
+### DevStack / ODL Middleware Server (`server.js` — Port 5000)
 
-### 6.1 Keystone Service Catalog URL Locality
+| Endpoint | Method | Description |
+| :---- | :---- | :---- |
+| `/api/openstack/summary` | `GET` | Aggregated cloud status (VM counts, network counts, quotas, controller state) |
+| `/api/openstack/servers` | `GET` | Detailed Nova instance list with IP, flavor, and status mapping |
+| `/api/openstack/servers` | `POST` | Launches a new Nova VM instance |
+| `/api/openstack/servers/:id` | `DELETE` | Terminates and removes a Nova VM instance |
+| `/api/openstack/servers/:id/console` | `POST` | Generates a live noVNC console URL for instance access |
+| `/api/openstack/networks` | `GET` | Lists Neutron virtual networks and subnet associations |
+| `/api/openstack/security-groups` | `GET` | Lists security groups and active ingress/egress rules |
+| `/api/openstack/security-groups` | `POST` | Creates a new security group and syncs Table 250 shadow flow to ODL |
+| `/api/openstack/ovn-health` | `GET` | Returns OVN Northbound database and chassis health report |
+| `/api/openstack/vm-topology-map` | `GET` | Correlates Nova VMs to ODL `node-connector` bridge ports |
+| `/api/slices` | `GET` | Lists all OpenStack network slices from SQLite |
+| `/api/slices` | `POST` | Provisions a new OpenStack slice (Security Group + direct OVS QoS) |
+| `/api/slices/:id` | `DELETE` | Tears down OpenStack slice, removes SG, and deletes OVS queues/meters |
 
-**Challenge**: When DevStack runs on a virtual machine (e.g., `192.168.122.156`) but the dashboard server accesses Keystone via port forwarding or a localhost tunnel, the Keystone service catalog returns service URLs with the VM's internal IP (e.g., `http://172.24.4.2:8774`). These internal addresses are unreachable from the dashboard server.
+### ONOS Middleware Server (`server-onos.js` — Port 5001)
 
-**Solution**: Automatic URL rewriting was implemented in the `getToken()` function. After parsing the service catalog, the function checks whether `KEYSTONE_URL` points to localhost. If so, it rewrites the hostname of all discovered service URLs (Nova, Neutron, Glance) to match the Keystone hostname. For example, `http://172.24.4.2:8774` becomes `http://localhost:8774`. This ensures all API calls use routable addresses.
-
-### 6.2 DevStack Token Expiry
-
-**Challenge**: Keystone tokens have a limited lifetime (typically 1 hour in default DevStack configuration). Making an API call with an expired token returns HTTP 401, breaking the dashboard.
-
-**Solution**: Token caching with a 30-second safety buffer was implemented. Before each API call, `getToken()` checks whether the cached token's `expiresAt` timestamp is more than 30 seconds in the future. If not, a new token is requested. The buffer prevents race conditions where a token expires between the validity check and the actual API call.
-
-### 6.3 ODL Self-Signed TLS Certificates
-
-**Challenge**: ODL Potassium uses HTTPS by default (port 8443) with self-signed TLS certificates. Node.js rejects HTTPS connections to servers with untrusted certificates, making all ODL API calls fail with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`.
-
-**Solution**: The `odlRequest()` function configures `rejectUnauthorized: false` in the `https.request()` options. This instructs Node.js to accept self-signed certificates. While this bypasses certificate validation, it is acceptable for lab environments where ODL runs on localhost or a trusted internal network.
-
-### 6.4 noVNC Console API Version Fragmentation
-
-**Challenge**: Nova API versions ≥2.6 introduced a new remote consoles endpoint (`POST /servers/{id}/remote-consoles`), but older versions only support the legacy `os-getVNCConsole` action. Targeting only one version breaks compatibility with the other.
-
-**Solution**: A try-catch fallback strategy was implemented. The system first attempts the modern API with the `OpenStack-API-Version: compute 2.6` header. If this fails (e.g., on older Nova deployments), it automatically falls back to the legacy `os-getVNCConsole` action endpoint.
-
-### 6.5 ONOS REST API Timeouts on Large Topologies
-
-**Challenge**: Some ONOS REST API queries (particularly flow rule enumeration on large topologies) take longer than the default HTTP timeout, causing the dashboard to show stale data or errors.
-
-**Solution**: `AbortSignal.timeout(5000)` was added to all ONOS REST API calls via the `onosFetch()` helper. This provides a deterministic 5-second timeout with graceful degradation — if a query times out, the error is caught and an appropriate error response is returned to the frontend rather than hanging indefinitely.
-
-### 6.6 Process Stability Under Network Failures
-
-**Challenge**: Unhandled promise rejections from failed HTTP calls (e.g., DevStack VM offline, ONOS unreachable) crash the Node.js process, requiring manual restart of the backend server.
-
-**Solution**: Global `process.on("unhandledRejection")` and `process.on("uncaughtException")` handlers were installed on both `server.js` and `server-onos.js`. These handlers log the error but allow the process to continue running. This is critical for development and demo environments where network connectivity is intermittent.
-
-### 6.7 Dynamic Service URL Discovery vs. Static Configuration
-
-**Challenge**: OpenStack service URLs change depending on the deployment (single-node DevStack, multi-node deployment, port-forwarded access). Hardcoding service URLs in configuration files requires manual updates for every environment change.
-
-**Solution**: A fully dynamic service discovery approach was adopted. Instead of requiring `NOVA_URL`, `NEUTRON_URL`, and `GLANCE_URL` in the `.env` file, only `KEYSTONE_URL` is required. All other service URLs are automatically parsed from the Keystone service catalog on first authentication. The system additionally appends required API version paths (e.g., `/v2.0` for Neutron, `/v2` for Glance) if not already present.
-
-### 6.8 SSH Command Escaping for Remote Mininet Execution
-
-**Challenge**: Executing commands inside Mininet host network namespaces requires chaining SSH, `sudo`, and `mnexec` with proper argument escaping. Special characters in commands (especially single quotes) break the SSH command string.
-
-**Solution**: The `runMininetCmd()` function escapes single quotes in the command using `command.replace(/'/g, "'\\''")` before wrapping the command in a single-quoted SSH argument. Additional SSH options (`-o StrictHostKeyChecking=no -o LogLevel=ERROR -o ConnectTimeout=5`) suppress interactive prompts and set a connection timeout.
+| Endpoint | Method | Description |
+| :---- | :---- | :---- |
+| `/api/onos/summary` | `GET` | Aggregates ONOS devices, hosts, links, flows, and cluster health |
+| `/api/onos/verify/ping` | `POST` | Executes in-namespace ping test between two Mininet hosts |
+| `/api/onos/verify/iperf` | `POST` | Executes in-namespace iperf throughput benchmark |
+| `/api/onos/verify/queues` | `GET` | Inspects live HTB queue statistics on Mininet switches |
+| `/api/onos/slices` | `GET` | Authoritative fetch of all ONOS network slices from SQLite |
+| `/api/onos/slices` | `POST` | Atomically creates or updates ONOS slice in SQLite |
+| `/api/onos/slices/:id` | `DELETE` | Removes ONOS slice from SQLite and initiates switch cleanup |
+| `/api/onos/intent/parse` | `POST` | Proxies natural-language slicing prompts to neural intent service (port 5005) |
 
 ---
 
-## 7. Limitations
+## 9\. Challenges and Solutions
 
-1. **DevStack Dependency**: The integration is tested against DevStack, not production OpenStack. DevStack uses default configurations that may differ significantly from production deployments.
+### 9.1 Dynamic Keystone Service Discovery vs. Static Configuration
+- **Challenge**: OpenStack service URLs vary across deployments (single-node DevStack, multi-node setups, or bridged VMs). Hardcoding endpoints like `NOVA_URL` or `NEUTRON_URL` broke portability and required constant `.env` edits.
+- **Solution**: Implemented dynamic Keystone service catalog parsing on initial login. The server retrieves the service catalog from the Keystone token response, dynamically discovers public endpoints for compute, network, and image services, and normalizes API version paths.
 
-2. **Single-Project Scope**: All API calls authenticate as a single project (`admin`). Multi-tenant isolation is not implemented.
+### 9.2 ODL RESTCONF Meter Deserializer Defect & Direct OVS Enforcement
+- **Challenge**: Attempting to provision OpenFlow meters via ODL's RESTCONF API caused internal Java deserialization exceptions in this ODL Karaf release. Concurrently, standard DevStack lacks Neutron QoS driver support and Nova Placement bandwidth inventory.
+- **Solution**: Built `ovsDirect.js` to bypass the buggy RESTCONF meter path. It communicates directly with Open vSwitch via `ovs-ofctl` (creating meters with drop bands in Table 250) and `ovs-vsctl` (configuring Linux HTB queues on VM TAP interfaces). ODL is retained for shadow flow tagging and inventory discovery.
 
-3. **No Persistent Token Storage**: Tokens are cached in-memory only. Server restart requires re-authentication.
+### 9.3 OVN Pipeline Coexistence via Table 250 Isolation
+- **Challenge**: OpenStack's Neutron ML2/OVN mechanism driver manages OpenFlow tables `0` through `99` on `br-int`. Injecting custom slicing or telemetry flows into low-numbered tables caused packet loops, dropped DHCP offers, and severed VM metadata connections.
+- **Solution**: Confined all custom SDN rules, shadow flows, and direct metering exclusively to **Table 250**. Because OVN pipelines exit before Table 250, custom rules operate safely without interfering with default cloud forwarding.
 
-4. **Service Discovery Locality Assumption**: If Keystone is on localhost, all service URLs are rewritten to localhost. This breaks in multi-node deployments where services run on different hosts.
+### 9.4 OpenStack Nova noVNC Console API Incompatibilities
+- **Challenge**: Different OpenStack microversions expect varying action payload keys (`os-getVNCConsole` vs `remote-consoles`), causing VNC console generation to fail with HTTP 400/404 errors.
+- **Solution**: Implemented an adaptive fallback handler in `server.js` that attempts the standard microversion `os-getVNCConsole` payload with type `novnc`, and falls back to Nova v2.6+ `remote-consoles` if rejected.
 
-5. **OVN Health Check Requires Sudo**: The `ovn-nbctl show` command requires sudo privileges on the backend server host, which may not be available in containerized deployments.
+### 9.5 Dual-Controller Port Collisions & Mutual Exclusion Orchestration
+- **Challenge**: ODL and ONOS both require exclusive access to port 8181 (RESTCONF/REST API) and port 6653 (OpenFlow southbound). Running both simultaneously resulted in port binding failures.
+- **Solution**: Enforced a mutual exclusion operational model where only one controller runs at any given time. Added the frontend `detectController()` probe and standardized Docker swap commands (`docker stop onos && docker start odl`) along with automated OVS bridge controller re-pointing scripts.
 
-6. **No WebSocket Push for OpenStack Events**: The OpenStack integration is polling-based (frontend refreshes). Nova/Neutron event notifications (via message queue) are not consumed.
+### 9.6 Ephemeral OVS QoS Configuration & Automated 30-Second Reconciliation
+- **Challenge**: Linux HTB queues and OVS meters configured directly on virtual switches do not survive bridge re-creations (e.g., executing `mn -c` or restarting the OVS daemon). Slices appeared configured in the database while data plane rate limiting was silently lost.
+- **Solution**: Implemented a 30-second background reconciliation loop in `server.js`. The loop inspects active slices against live OVS state using `ovsDirect.isQueueConfigured()` and automatically re-applies missing meters and queues.
 
-7. **SSH Key Hardcoded Path**: The Mininet SSH key path defaults to `~/.ssh/id_main`, which is specific to the development environment. Different deployments must set `MININET_SSH_KEY` in `.env`.
+### 9.7 Remote Mininet Namespace Execution and SSH Escaping
+- **Challenge**: Running verification diagnostics on emulated hosts requires executing commands through SSH inside network namespaces (`mnexec`). Complex arguments containing nested quotes (such as `iperf -y C` or `awk` formatting) caused SSH argument parsing syntax errors.
+- **Solution**: Constructed `runMininetCmd()` with rigorous single-quote escaping:
+  ```javascript
+  command.replace(/'/g, "'\\''")
+  ```
+  The escaped command is wrapped in a dedicated `mnexec -a $(pgrep -f 'mininet:<host>')` subshell with strict host-key verification disabled.
 
-8. **No TLS/HTTPS for OpenStack APIs**: All OpenStack API communication uses plain HTTP. TLS toggle endpoints exist in commented-out code but are not active.
+### 9.8 Process Stability and Graceful Degradation Under Cloud Outages
+- **Challenge**: Network drops between the host and virtual machines (DevStack VM or Mininet VM) triggered unhandled promise rejections that crashed Node.js processes.
+- **Solution**: Installed global `process.on("unhandledRejection")` and `process.on("uncaughtException")` handlers. Added deterministic 5-second request timeouts (`AbortSignal.timeout(5000)`) on all external fetch pipelines, returning structured error payloads rather than allowing sockets to hang.
 
-9. **Limited Error Propagation**: OpenStack API errors are wrapped in generic error messages. Neutron quota violations, flavor constraints, and image compatibility issues are not surfaced clearly.
+---
 
-10. **No Live ODL–OpenStack Data Plane Correlation**: While the server connects to both ODL and OpenStack, there is no mechanism to correlate ODL flow data with OpenStack Neutron ports in real-time.
+## 10\. Limitations
 
-11. **ODL Certificate Validation Disabled**: The `rejectUnauthorized: false` setting accepts any TLS certificate from ODL, including potentially malicious ones. In production, proper certificate management should be configured.
-
-12. **Email Alerts Require Gmail**: The alert email functionality depends on Gmail SMTP with app passwords. Alternative mail providers are not supported without code changes.
-
-13. **Single Database File**: Both `server.js` and `server-onos.js` use the same `users.db` SQLite file. Concurrent write access from both processes is protected by SQLite's built-in locking, but high-write-throughput scenarios may encounter contention.
+1. **DevStack Single-Node Scope**: The integration is developed and tested against single-node DevStack. Production multi-node OpenStack deployments with distributed OVS compute nodes require multi-chassis manager configurations.
+2. **Single-Project Administrative Boundary**: All Keystone API interactions authenticate using a single administrative project scope (`admin`). Multi-tenant role-based access control (RBAC) is not implemented.
+3. **In-Memory Keystone Token Lifecycle**: Keystone tokens are cached in volatile Node.js memory. Restarting the backend server forces re-authentication on the next incoming request.
+4. **Localhost Rewriting Assumption**: When Keystone is accessed on localhost, the discovery algorithm rewrites all service URLs to localhost. This assumption breaks if individual OpenStack services reside on separate physical IP addresses.
+5. **Host Sudo Requirement for OVN and OVS**: Health verification (`ovn-nbctl show`) and direct QoS enforcement (`ovs-ofctl`, `ovs-vsctl`) require passwordless sudo privileges on the backend server host.
+6. **Controller Mutual Exclusion**: ODL and ONOS cannot operate concurrently on the same host due to port conflicts (8181 and 6653). Switching requires stopping one container and restarting the other.
+7. **Volatile Mininet OVS Queues**: While OpenStack slices on the host bridge are automatically restored by the 30-second reconciliation loop, ONOS slice queues configured on the remote Mininet VM are not auto-reconciled after a `mn -c` wipe.
+8. **Table 250 ODL Observability Boundary**: ODL shadow flows in Table 250 serve as observability and telemetry markers only. Because OVN handles active packet forwarding in Tables 0–99, Table 250 flows do not alter real production cloud forwarding decisions.
+9. **Single SQLite Database File**: Both backend servers share `users.db`. While SQLite's WAL mode handles moderate concurrency, high write volumes across simultaneous slicing and authentication operations may encounter lock contention.
+10. **Mininet Testing Constraint**: The live in-namespace verification endpoints (ping, iperf, queue telemetry) depend on Mininet network namespaces via SSH and cannot directly probe physical hardware switch datapaths.

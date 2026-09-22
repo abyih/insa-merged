@@ -7,6 +7,7 @@ import {
   saveSlices,
   isHostInAnySlice,
   getTopologyInfo,
+  resetSliceCache,
 } from "../slicingService";
 import * as apiController from "../api-controller";
 
@@ -79,7 +80,7 @@ Object.defineProperty(globalThis, "localStorage", {
 
 describe("Slicing Service - Slice Deletion & Deep Flow Cleanup", () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetSliceCache();
     vi.clearAllMocks();
   });
 
@@ -147,7 +148,7 @@ describe("Slicing Service - Slice Deletion & Deep Flow Cleanup", () => {
 
 describe("Slicing Service - Topology Info & Multi-Slice Host Discovery", () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetSliceCache();
     vi.clearAllMocks();
   });
 
@@ -366,7 +367,7 @@ describe("Slicing Service - Topology Info & Multi-Slice Host Discovery", () => {
 
 describe("Slicing Service - Update Slice (Hosts & Bandwidth)", () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetSliceCache();
     vi.clearAllMocks();
   });
 

@@ -94,14 +94,49 @@ cd ..
 
 ### Step 2 — Start ONOS
 
+#### 1. Download and Run the ONOS Container (Initial Setup)
 ```bash
-# Docker (recommended)
-docker run -d --name onos -p 8181:8181 -p 6653:6653 onosproject/onos:2.7.0
+# Pull official ONOS image
+docker pull onosproject/onos:2.7.0
 
-# Activate OpenFlow and forwarding apps
-# (via ONOS CLI: ssh -p 8101 onos@localhost, password: rocks)
-app activate org.onosproject.openflow
-app activate org.onosproject.fwd
+# Run ONOS with REST (8181), Karaf SSH CLI (8101), and OpenFlow (6653) ports exposed
+docker run -d --name onos \
+  -p 8181:8181 \
+  -p 8101:8101 \
+  -p 6653:6653 \
+  -p 6640:6640 \
+  onosproject/onos:2.7.0
+```
+
+#### 2. Wait for Initialization and Activate Required Applications
+Wait ~15–30 seconds for ONOS to initialize, then activate the OpenFlow provider, reactive forwarding, and proxy ARP (plus OVSDB if managing bridges on port 6640):
+
+**Via REST API (Recommended)**:
+```bash
+# 1. OpenFlow southbound provider
+curl -u onos:rocks -X POST http://localhost:8181/onos/v1/applications/org.onosproject.openflow/active
+
+# 2. Reactive Forwarding (initial topology discovery)
+curl -u onos:rocks -X POST http://localhost:8181/onos/v1/applications/org.onosproject.fwd/active
+
+# 3. Proxy ARP / NDP (enables host address resolution)
+curl -u onos:rocks -X POST http://localhost:8181/onos/v1/applications/org.onosproject.proxyarp/active
+
+# 4. OVSDB Base (for port 6640 manager connections)
+curl -u onos:rocks -X POST http://localhost:8181/onos/v1/applications/org.onosproject.ovsdb-base/active
+```
+
+**Via ONOS CLI (Alternative)**:
+```bash
+ssh -p 8101 -o StrictHostKeyChecking=no onos@localhost \
+  "app activate org.onosproject.openflow; app activate org.onosproject.fwd; app activate org.onosproject.proxyarp; app activate org.onosproject.ovsdb-base"
+```
+
+#### 3. Daily Management
+Once created, start and stop the container as needed:
+```bash
+docker stop onos
+docker start onos
 ```
 
 ### Step 3 — Start Mininet with Multi-Switch Topology
@@ -264,9 +299,9 @@ The sweep checks both `ETH_SRC` and `ETH_DST` criteria against the set of the sl
 
 ### Phase 4 — Persistence Cleanup
 
-1. Remove the slice from localStorage
-2. Re-save remaining slices to both localStorage and SQLite
-3. Send a DELETE request to the backend SQLite endpoint: `DELETE /api/onos/slices/<sliceId>`
+1. Send a DELETE request to the backend SQLite endpoint: `DELETE /api/onos/slices/<sliceId>` to permanently remove the slice record from `users.db`.
+2. Update the in-memory runtime slice cache to immediately reflect host deallocation.
+3. Trigger an ARP neighbor table flush across all Mininet hosts (`POST /api/onos/flush-arp`) so hosts invalidate stale peer MAC entries.
 
 Errors during deletion are collected and returned as warnings but do not abort the operation. Partial cleanup is preferred over leaving orphaned network resources.
 
@@ -475,17 +510,20 @@ The frontend detects which SDN controller (ONOS or ODL) is active at startup by 
 
 All API functions in `api-controller.js` (e.g., `getDevices()`, `getHosts()`, `getLinks()`, `getMeters()`, `installOnosFlow()`, `deleteOnosFlow()`) dispatch to either ONOS-specific or ODL-specific endpoints based on the detected controller. This allows the slicing service to operate transparently regardless of which controller is in use.
 
-### Slice Data Persistence
+### Slice Data Persistence (Pure SQLite Architecture)
 
-Slices are stored in both:
-- **localStorage** (frontend, immediate) — Provides instant reads without network latency
-- **SQLite** (backend, durable, via `server-onos.js`) — Survives browser refreshes and page navigations
+Slices are persisted **exclusively in backend SQLite** (`users.db` via `server-onos.js`), functioning as the single authoritative source of truth across all clients, browser tabs, and backend subsystems. All reliance on browser `localStorage` for slice state has been eliminated.
 
-**Sync Strategy**: On load, `fetchSlicesFromDb()` first tries the backend SQLite endpoint (`GET /api/onos/slices`). If successful, the response is normalized and written back to localStorage. If the backend is unreachable, localStorage is used as a fallback.
+- **Backend SQLite (`users.db`)**: Authoritative durability in the `onos_slices` table (`id`, `name`, `slice_type`, `color`, `vlan_id`, `bandwidth_kbps`, `burst_kbps`, `hosts`, `status`, `meter_ids`, `flow_rule_ids`, `priority`, `created_at`, `updated_at`).
+- **In-Memory Runtime Cache**: Slices retrieved from SQLite are kept in an in-memory cache within `slicingService.js` to enable instantaneous UI responsiveness without cache-invalidation conflicts.
 
-**Save Strategy**: When slices are saved via `saveSlices()`, data is written to localStorage immediately and then asynchronously POST-ed to the backend SQLite endpoint. Backend save failures are silently caught to prevent data loss during network issues.
+**Read Strategy**: On application launch and periodic polling, `fetchSlicesFromDb()` executes `GET /api/onos/slices`, updates the in-memory cache, and renders the dashboard.
 
-**Normalization**: The `normalizeSlice()` function ensures consistent field names across frontend and backend representations, handling aliases like `bandwidth`/`bandwidthKbps`/`bandwidth_kbps` and computing burst size as `bandwidth × 0.2` if not explicitly set.
+**Save Strategy**: When slices are created or updated via `createSlice()` or `updateSlice()`, `saveSlices()` awaits the `POST /api/onos/slices` request, ensuring the SQLite transaction commits before UI refresh pipelines run, completely eliminating race conditions.
+
+**Deletion Strategy**: When `deleteSlice(sliceId)` runs, it awaits `DELETE /api/onos/slices/:id`, removes the record from SQLite, tears down OpenFlow rules and meters across all switches, and flushes host neighbor caches.
+
+**Normalization**: The `normalizeSlice()` function ensures uniform property names (`bandwidth`, `bandwidthKbps`, `burstSize`, `burstKbps`) and derives burst size as `bandwidth × 0.2` if omitted.
 
 ### SQLite Schema
 
@@ -537,7 +575,7 @@ For **URLLC slices**, additional Priority 41000 flows add `QUEUE:0` for DSCP 46 
 
 ### Network Capacity Defaults
 
-The default total network capacity is **100,000 KB/s** (100 MB/s / 800 Mbps). The capacity pool is configurable via the UI and stored in both localStorage and SQLite (`onos_slice_config.total_capacity_kbps`).
+The default total network capacity is **100,000 KB/s** (100 MB/s / 800 Mbps). The capacity pool is configurable via the UI and stored authoritatively in SQLite (`onos_slice_config.total_capacity_kbps`), accessible via `GET /api/onos/slices/capacity` and `PUT /api/onos/slices/capacity`.
 
 ### Slice YAML Configuration (`slices.yaml`)
 
@@ -628,11 +666,14 @@ This combined approach ensures DSCP-marked traffic receives priority scheduling 
 
 **Solution**: This is acknowledged as a design tradeoff in the current implementation, which is optimized for small slices (2–10 hosts) typical in SDN lab environments. The flow rule installation is batched and tracked in the `slice.flows[]` array for efficient cleanup. For larger deployments, a VLAN-based or group-table-based approach would be needed to reduce flow count.
 
-### 9.9 Dual-Persistence Consistency Between localStorage and SQLite
+### 9.9 Elimination of Dual-State Race Conditions via Unified SQLite Persistence
 
-**Challenge**: Slice data exists in two locations (browser localStorage and backend SQLite). These can become inconsistent if the backend is temporarily unreachable during a save operation, or if localStorage is modified by another browser tab.
+**Challenge**: In earlier iterations, slice data was maintained in both browser `localStorage` and backend SQLite. Because `saveSlices()` issued asynchronous, un-awaited background POST requests while UI reloads synchronously fetched from SQLite, a distributed cache race condition occurred: creating a 3rd slice would return stale data from SQLite before the POST finished, causing the UI to overwrite `localStorage` and wipe the new slice.
 
-**Solution**: A read-prioritization strategy was adopted: reads always try SQLite first (which is the authoritative source) and fall back to localStorage only if the backend is unreachable. Writes go to both: localStorage immediately (for instant UI feedback) and SQLite asynchronously (for durability). The `normalizeSlice()` function handles field name differences between frontend and backend representations, ensuring consistent data regardless of source.
+**Solution**: `localStorage` was completely discarded for slice management. The architecture transitioned to a unified, authoritative SQLite backend (`users.db`):
+1. All CRUD operations (`POST /api/onos/slices`, `DELETE /api/onos/slices/:id`, `GET /api/onos/slices`) are strictly awaited.
+2. An in-memory runtime cache is updated atomically upon completed database operations.
+3. Multi-user consistency is guaranteed: any administrative session or background monitoring script querying `/api/onos/slices` observes the identical, current slice configuration.
 
 ---
 
