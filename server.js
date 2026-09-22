@@ -21,7 +21,9 @@ import bodyParser from "body-parser";
 import { execFile } from "child_process";
 import http from "http";
 import { Server } from "socket.io";
-import linkguardRouter, { startPolling } from "./linkguard.js";
+import linkguardRouter, { startPolling, onosClient } from "./linkguard.js";
+import { updateOdlTlsConfig, updateOnosTlsConfig } from "./tlsOrchestrator.js";
+import { registerDigestJobs } from "./digest.js";
 import bcrypt from "bcryptjs";
 import Database from "better-sqlite3";
 import nodemailer from "nodemailer";
@@ -281,6 +283,15 @@ app.get("/api/openstack/ping", async (req, res) => {
 /* =========================
    HELPER: NORMALIZE PROTOCOL (NO CRASH FOR ICMP)
    ========================= */
+function resolvePortablePath(rawPath) {
+  if (!rawPath) return "";
+  const systemUser = process.env.VM_USER || os.userInfo().username;
+  return rawPath
+    .replace(/\${VM_USER}/g, systemUser)
+    .replace(/\$VM_USER/g, systemUser)
+    .replace(/^~/, os.homedir());
+}
+
 const normalizeProtocol = (protocol) => {
   if (!protocol) return "icmp";
   return protocol.toLowerCase();
@@ -3279,6 +3290,115 @@ async function resolveKeystoneUrl() {
   }
 }
 
+/* ==========================================
+   SDN TLS CONFIGURATION ROUTES (ODL & ONOS)
+   ========================================== */
+
+app.get("/api/tls/status", async (req, res) => {
+  const { controller } = req.query;
+  if (!controller) {
+    return res.status(400).json({ error: "Controller parameter is required (odl or onos)." });
+  }
+
+  const target = controller.toLowerCase();
+
+  try {
+    if (target === "odl") {
+      const vmUser = process.env.VM_USER || os.userInfo().username;
+      const rawEtcPath = process.env.ODL_ETC_PATH || `/home/${vmUser}/karaf-0.23.0/etc`;
+      const odlEtcPath = resolvePortablePath(rawEtcPath);
+      const ofPluginPath = path.join(odlEtcPath, "org.opendaylight.openflowplugin.cfg");
+
+      if (fs.existsSync(ofPluginPath)) {
+        const content = fs.readFileSync(ofPluginPath, "utf8");
+        const isEnabled =
+          content.includes("use-transport-tls=true") || content.includes("transport-protocol=TLS");
+        return res.json({ isEnabled });
+      }
+      return res.json({ isEnabled: false });
+    } else if (target === "onos") {
+      const containerName = process.env.ONOS_CONTAINER_NAME || "onos-2.7";
+      const internalEtc = process.env.ONOS_INTERNAL_ETC || "/root/onos/apache-karaf-4.2.9/etc";
+      const ofFileName = "org.onosproject.openflow.controller.impl.OpenFlowControllerImpl.cfg";
+      const logFile = path.posix.join(internalEtc, "..", "data", "log", "karaf.log");
+
+      // Prefer the mode ONOS is really running in (last TlsParams line in karaf.log)
+      const logCmd = `docker exec ${containerName} sh -c "grep -o 'TlsParams{tlsMode=[a-z]*' ${logFile} | tail -1"`;
+      exec(logCmd, (logErr, logOut) => {
+        const m = (logOut || "").match(/tlsMode=(\w+)/);
+        if (!logErr && m) {
+          return res.json({ isEnabled: m[1] !== "disabled" });
+        }
+        // Fallback: read the cfg file
+        const checkCommand = `docker exec ${containerName} cat ${internalEtc}/${ofFileName}`;
+        exec(checkCommand, (error, stdout) => {
+          if (error || !stdout) return res.json({ isEnabled: false });
+          return res.json({ isEnabled: /tlsMode\s*=\s*(strict|enabled)/.test(stdout) });
+        });
+      });
+    } else {
+      return res.status(400).json({ error: "Unsupported controller. Choose 'odl' or 'onos'." });
+    }
+  } catch (error) {
+    res.status(500).json({ error: "Failed to read configuration status.", details: error.message });
+  }
+});
+
+// ONOS can take 2-3 minutes (container restart), which browsers/proxies drop as a
+// "Network Error". So ONOS toggles run as a background job the UI polls for the result.
+const tlsJobs = {}; // controller -> { state: "running"|"done"|"error", enable, message, startedAt }
+
+app.post("/api/tls/toggle", async (req, res) => {
+  const { controller, enable } = req.body;
+  if (!controller || typeof enable !== "boolean") {
+    return res
+      .status(400)
+      .json({ error: "Invalid request. 'controller' and boolean 'enable' required." });
+  }
+
+  const target = controller.toLowerCase();
+
+  try {
+    if (target === "odl") {
+      await updateOdlTlsConfig(enable);
+      return res.json({
+        success: true,
+        message: `ODL Southbound TLS is now ${enable ? "ENABLED" : "DISABLED"}`,
+      });
+    } else if (target === "onos") {
+      if (tlsJobs.onos?.state === "running") {
+        return res.status(202).json({ success: true, pending: true, message: "ONOS update already running." });
+      }
+      tlsJobs.onos = { state: "running", enable, message: "", startedAt: Date.now() };
+      updateOnosTlsConfig(enable)
+        .then(() => {
+          tlsJobs.onos = {
+            ...tlsJobs.onos,
+            state: "done",
+            message: `ONOS Southbound TLS is now ${enable ? "ENABLED (Strict)" : "DISABLED"}`,
+          };
+        })
+        .catch((err) => {
+          console.error("[TLS Toggle Error]", err.message);
+          tlsJobs.onos = { ...tlsJobs.onos, state: "error", message: err.message };
+        });
+      return res.status(202).json({ success: true, pending: true });
+    } else {
+      return res.status(400).json({ error: "TLS orchestration is only supported for ODL or ONOS." });
+    }
+  } catch (error) {
+    console.error("[TLS Toggle Error]", error.message);
+    res
+      .status(500)
+      .json({ error: "Failed to update controller configuration.", details: error.message });
+  }
+});
+
+app.get("/api/tls/job", (req, res) => {
+  const target = String(req.query.controller || "").toLowerCase();
+  res.json(tlsJobs[target] || { state: "idle" });
+});
+
 const bootstrap = async () => {
   console.log("--- BEGINNING LEARNING PHASE (SERVICE DISCOVERY) ---");
 
@@ -3406,9 +3526,14 @@ async function reconcileSlicePersistence() {
 
 setInterval(reconcileSlicePersistence, RECONCILE_INTERVAL_MS);
 console.log(`Persistence reconciliation loop started (every ${RECONCILE_INTERVAL_MS / 1000}s)`);
+  // Start Background Pollers for LinkGuard
   startPolling(server);
+
+  // Start Digest Cron Scheduler
+  registerDigestJobs(onosClient);
+
   server.listen(port, () => {
-    console.log(`\nDashboard backend is now listening on Port ${port}`);
+    console.log(`\nDashboard backend + Sockets + Cron scheduler listening on Port ${port}`);
   });
 };
 

@@ -291,7 +291,7 @@ const ONOS_KARAF_CLIENT = process.env.ONOS_KARAF_CLIENT || '/root/onos/apache-ka
 const ONOS_BUNDLE_PATH = process.env.ONOS_BUNDLE_PATH;
 const ONOS_BUNDLE_NAME = process.env.ONOS_BUNDLE_SYMBOLIC_NAME || 'linkguard-app';
 
-const onosClient = axios.create({
+export const onosClient = axios.create({
     baseURL: ONOS_BASE,
     timeout: 2000,
     headers: { Accept: 'application/json' }
