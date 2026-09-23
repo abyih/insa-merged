@@ -94,31 +94,180 @@ function TopologyRoute() {
     loadTopologies();
   }, [loadTopologies]);
 
-  // Cross-check filter for DevStack topology
+  // Cross-check filter & topology graph integrity for DevStack topology
   const displayedDevstackTopo = React.useMemo(() => {
     if (!devstackTopo) return null;
-    if (!crossCheck || !cloudData || !cloudData.virtualMachines) {
-      return { ...devstackTopo, nodes: [...(devstackTopo.nodes || [])], links: [...(devstackTopo.links || [])] };
+
+    let nodes = [...(devstackTopo.nodes || [])];
+    let links = [...(devstackTopo.links || [])];
+
+    // 1. Ensure OVS Host exists
+    let ovsNode = nodes.find((n) => n.group === "ovs-host");
+    if (!ovsNode) {
+      const ovsId = "ovsdb://192.168.122.156:6640";
+      ovsNode = {
+        id: ovsId,
+        label: "OVS Host (DevStack)",
+        group: "ovs-host",
+        value: 28,
+        title: "OVS Host: <b>DevStack</b><br>Type: <b>OVSDB Host Manager</b><br>IP: <b>192.168.122.156</b>",
+        nodeDetails: {
+          type: "OVS Host",
+          hostname: "DevStack",
+          nodeId: ovsId,
+          ip: "192.168.122.156",
+        },
+      };
+      nodes.unshift(ovsNode);
     }
 
-    const myVmIds = new Set(cloudData.virtualMachines.map((vm) => vm.id));
-    const foreignVmNodeIds = new Set();
-    (devstackTopo.nodes || []).forEach((n) => {
-      if (n.group === "vm" && n.nodeDetails?.vmUuid) {
-        if (!myVmIds.has(n.nodeDetails.vmUuid)) {
-          foreignVmNodeIds.add(n.id);
-        }
+    // 2. Ensure Integration Bridge (br-int) exists
+    let brIntNode = nodes.find((n) => n.group === "bridge-int");
+    if (!brIntNode) {
+      const brIntId = "bridge/br-int";
+      brIntNode = {
+        id: brIntId,
+        label: "Integration Bridge (br-int)",
+        group: "bridge-int",
+        value: 26,
+        title: "Bridge: <b>br-int</b><br>Type: <b>Integration Bridge (DevStack OVN)</b>",
+        nodeDetails: {
+          type: "Integration Bridge",
+          bridgeName: "br-int",
+          nodeId: brIntId,
+        },
+      };
+      nodes.push(brIntNode);
+    }
+
+    // 3. Ensure External Bridge (br-ex) exists
+    let brExNode = nodes.find((n) => n.group === "bridge-ex");
+    if (!brExNode) {
+      const brExId = "bridge/br-ex";
+      brExNode = {
+        id: brExId,
+        label: "External Bridge (br-ex)",
+        group: "bridge-ex",
+        value: 22,
+        title: "Bridge: <b>br-ex</b><br>Type: <b>External Uplink Bridge</b>",
+        nodeDetails: {
+          type: "External Bridge",
+          bridgeName: "br-ex",
+          nodeId: brExId,
+        },
+      };
+      nodes.push(brExNode);
+    }
+
+    // 4. Ensure Link OVS Host <-> br-int exists
+    const hasHostIntLink = links.some(
+      (l) => (l.from === ovsNode.id && l.to === brIntNode.id) || (l.from === brIntNode.id && l.to === ovsNode.id)
+    );
+    if (!hasHostIntLink) {
+      links.push({
+        from: ovsNode.id,
+        to: brIntNode.id,
+        title: "OVSDB ↔ Integration Bridge",
+        dashes: true,
+        color: { color: "#818cf8" },
+        width: 1.5,
+      });
+    }
+
+    // 5. Ensure Patch Link br-int <-> br-ex exists
+    const hasPatchLink = links.some(
+      (l) => (l.from === brIntNode.id && l.to === brExNode.id) || (l.from === brExNode.id && l.to === brIntNode.id)
+    );
+    if (!hasPatchLink) {
+      links.push({
+        from: brIntNode.id,
+        to: brExNode.id,
+        title: "Patch Link: <b>patch-br-int-to-br-ex</b>",
+        width: 3.5,
+        color: { color: "#818cf8", highlight: "#6366f1" },
+      });
+    }
+
+    // 6. Merge & Attach OpenStack VMs from cloud-summary
+    const cloudVms = cloudData?.virtualMachines || [];
+    cloudVms.forEach((vm) => {
+      const vmId = `vm-${vm.id}`;
+      const vmLabel = `${vm.name || "VM"}\n${vm.ip || ""}`;
+      const existingVmNode = nodes.find((n) => n.id === vmId || n.nodeDetails?.vmUuid === vm.id);
+      if (!existingVmNode) {
+        nodes.push({
+          id: vmId,
+          label: vmLabel,
+          group: "vm",
+          value: 18,
+          title: `VM: <b>${vm.name}</b><br>IP: <b>${vm.ip}</b><br>Status: <b>${vm.status}</b><br>Network: ${vm.network || "N/A"}<br>Port: ${vm.logicalPort || "N/A"}`,
+          nodeDetails: {
+            type: "Virtual Machine",
+            vmUuid: vm.id,
+            vmName: vm.name,
+            ip: vm.ip,
+            allIps: vm.allIps,
+            network: vm.network,
+            logicalPort: vm.logicalPort,
+            ifaceStatus: vm.status,
+          },
+        });
+      }
+
+      // Link VM to br-int
+      const targetVmId = existingVmNode ? existingVmNode.id : vmId;
+      const isVmLinked = links.some(
+        (l) => (l.from === targetVmId && l.to === brIntNode.id) || (l.from === brIntNode.id && l.to === targetVmId)
+      );
+      if (!isVmLinked) {
+        links.push({
+          from: targetVmId,
+          to: brIntNode.id,
+          title: `VM Interface: <b>${vm.logicalPort?.slice(0, 11) || "tap"}</b><br>IP: <b>${vm.ip}</b>`,
+          width: 2,
+          color: { color: "#38bdf8" },
+        });
       }
     });
 
-    if (foreignVmNodeIds.size === 0) return devstackTopo;
+    // 7. Ensure ANY VM node currently in nodes has a link to br-int (never floating)
+    nodes.filter((n) => n.group === "vm").forEach((vmNode) => {
+      const isLinked = links.some((l) => l.from === vmNode.id || l.to === vmNode.id);
+      if (!isLinked) {
+        links.push({
+          from: vmNode.id,
+          to: brIntNode.id,
+          title: `VM Interface: <b>${vmNode.nodeDetails?.tapPort || "tap"}</b>`,
+          width: 2,
+          color: { color: "#38bdf8" },
+        });
+      }
+    });
+
+    // 8. Cross-check filter: if enabled, remove foreign/stale VMs
+    if (crossCheck && cloudVms.length > 0) {
+      const myVmIds = new Set(cloudVms.map((vm) => vm.id));
+      const foreignVmNodeIds = new Set();
+      nodes.forEach((n) => {
+        if (n.group === "vm" && n.nodeDetails?.vmUuid) {
+          if (!myVmIds.has(n.nodeDetails.vmUuid)) {
+            foreignVmNodeIds.add(n.id);
+          }
+        }
+      });
+
+      if (foreignVmNodeIds.size > 0) {
+        nodes = nodes.filter((n) => !foreignVmNodeIds.has(n.id));
+        links = links.filter(
+          (l) => !foreignVmNodeIds.has(l.from) && !foreignVmNodeIds.has(l.to)
+        );
+      }
+    }
 
     return {
       ...devstackTopo,
-      nodes: (devstackTopo.nodes || []).filter((n) => !foreignVmNodeIds.has(n.id)),
-      links: (devstackTopo.links || []).filter(
-        (l) => !foreignVmNodeIds.has(l.from) && !foreignVmNodeIds.has(l.to)
-      ),
+      nodes,
+      links,
     };
   }, [devstackTopo, cloudData, crossCheck]);
 

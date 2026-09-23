@@ -346,6 +346,64 @@ export const extractOvsdbData = (topology) => {
 		}
 	});
 
+	// Phase 4: Fallback reconciliation for DevStack OVN
+	const brIntNode = nodes.find((n) => n.group === "bridge-int");
+	const brExNode = nodes.find((n) => n.group === "bridge-ex");
+	const ovsHostNode = nodes.find((n) => n.group === "ovs-host");
+
+	// Ensure Host <-> br-int link
+	if (ovsHostNode && brIntNode) {
+		const hostLinkKey = `${ovsHostNode.id}:${brIntNode.id}`;
+		const hostLinkKeyRev = `${brIntNode.id}:${ovsHostNode.id}`;
+		if (!linksMap[hostLinkKey] && !linksMap[hostLinkKeyRev]) {
+			links.push({
+				from: ovsHostNode.id,
+				to: brIntNode.id,
+				title: "OVSDB &harr; Integration Bridge",
+				dashes: true,
+				color: { color: "#818cf8" },
+				width: 1.5,
+			});
+			linksMap[hostLinkKey] = true;
+			linksMap[hostLinkKeyRev] = true;
+		}
+	}
+
+	// Ensure br-int <-> br-ex patch link
+	if (brIntNode && brExNode) {
+		const patchKey1 = `${brIntNode.id}:${brExNode.id}`;
+		const patchKey2 = `${brExNode.id}:${brIntNode.id}`;
+		if (!linksMap[patchKey1] && !linksMap[patchKey2]) {
+			links.push({
+				from: brIntNode.id,
+				to: brExNode.id,
+				title: "Patch Link: <b>patch-br-int-to-br-ex</b>",
+				color: { color: "#818cf8", highlight: "#6366f1" },
+				width: 3.5,
+			});
+			linksMap[patchKey1] = true;
+			linksMap[patchKey2] = true;
+		}
+	}
+
+	// Ensure all VMs are connected to br-int
+	if (brIntNode) {
+		nodes.filter((n) => n.group === "vm").forEach((vmNode) => {
+			const isLinked = links.some((l) => l.from === vmNode.id || l.to === vmNode.id);
+			if (!isLinked) {
+				const vmLinkKey = `${vmNode.id}:${brIntNode.id}`;
+				links.push({
+					from: vmNode.id,
+					to: brIntNode.id,
+					title: `VM Interface: <b>${vmNode.nodeDetails?.tapPort || "tap"}</b>`,
+					color: { color: "#38bdf8" },
+					width: 2,
+				});
+				linksMap[vmLinkKey] = true;
+			}
+		});
+	}
+
 	return { nodes, links };
 };
 

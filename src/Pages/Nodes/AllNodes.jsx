@@ -166,7 +166,7 @@ export default function AllNodes() {
                 </tr>
               ) : (
                 visible.map((node, i) => (
-                  <NodeItem key={i} node={node} onClick={() => navigate(`/node/${node.id}/detail`)} />
+                  <NodeItem key={i} node={node} onClick={() => navigate(`/node/${encodeURIComponent(node.id)}/detail`)} />
                 ))
               )}
             </tbody>

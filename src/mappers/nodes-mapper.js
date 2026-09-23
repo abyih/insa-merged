@@ -136,11 +136,12 @@ export const mapNodes = (rawData, topologyData) => {
 				mac: tp.mac || "N/A",
 				state: { live: true },
 			}));
-		} else if (nodeDetails.tapPort) {
+		} else if (nodeDetails.tapPort || nodeDetails.logicalPort) {
+			const tap = nodeDetails.tapPort || nodeDetails.logicalPort;
 			connectors = [
 				{
-					id: nodeDetails.tapPort,
-					name: `${nodeDetails.tapPort} (MAC: ${nodeDetails.mac || "N/A"})`,
+					id: tap,
+					name: `${tap} (IP: ${nodeDetails.ip || "N/A"})`,
 					mac: nodeDetails.mac || "N/A",
 					state: { live: status === "up" },
 				},

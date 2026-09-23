@@ -127,7 +127,18 @@ const TopologySimple = ({
 				smooth: false,
 			},
 			physics: {
-				barnesHut: { gravitationalConstant: -8000, centralGravity: 0.3, springLength: 150 },
+				solver: "forceAtlas2Based",
+				forceAtlas2Based: {
+					gravitationalConstant: -120,
+					centralGravity: 0.02,
+					springLength: 220,
+					springConstant: 0.08,
+					damping: 0.5,
+					avoidOverlap: 1,
+				},
+				stabilization: {
+					iterations: 150,
+				},
 			},
 			groups: {
 				switch: {
@@ -233,7 +244,10 @@ const TopologySimple = ({
 			});
 		};
 
-		network.once("stabilized", updateDotPositions);
+		network.once("stabilized", () => {
+			updateDotPositions();
+			network.fit({ animation: { duration: 400 } });
+		});
 		network.on("dragEnd", updateDotPositions);
 		network.on("afterDrawing", updateDotPositions);
 

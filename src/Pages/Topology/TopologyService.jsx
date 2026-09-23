@@ -434,55 +434,121 @@ const NetworkTopologySvc = {
 				};
 			}
 
-			// If targetTopology === 'ovsdb:1', return DevStack OVSDB topology
-			if (targetTopology === "ovsdb:1") {
-				const devstackNodes = allNodes.filter(
+			// Helper to construct DevStack OVSDB graph with bridges and VMs
+			const buildDevstackGraph = (allNodesList, vmsList) => {
+				const devstackNodes = allNodesList.filter(
 					(n) => n.group === "ovs-host" || n.group === "bridge-int"
 				);
 				const devstackLinks = [];
 
-				// Add External Bridge (br-ex)
-				const brExId = "bridge/br-ex";
-				devstackNodes.push({
-					id: brExId,
-					label: "External Bridge (br-ex)",
-					group: "bridge-ex",
-					value: 22,
-					title: `Bridge: <b>br-ex</b><br>Type: <b>External Uplink Bridge</b>`,
-					nodeDetails: {
-						type: "External Bridge",
-						bridgeName: "br-ex",
-						nodeId: brExId,
-					},
-				});
-
-				const ovsNode = devstackNodes.find((n) => n.group === "ovs-host");
-				const brIntNode = devstackNodes.find((n) => n.group === "bridge-int");
-
-				if (ovsNode && brIntNode) {
-					devstackLinks.push({
-						from: ovsNode.id,
-						to: brIntNode.id,
-						title: "OVSDB &harr; Integration Bridge",
-						dashes: true,
-						color: { color: "#818cf8" },
-					});
+				// 1. Ensure OVS Host exists
+				let ovsNode = devstackNodes.find((n) => n.group === "ovs-host");
+				if (!ovsNode) {
+					const ovsId = "ovsdb:172.17.0.1";
+					ovsNode = {
+						id: ovsId,
+						label: "OVS Host (DevStack)",
+						group: "ovs-host",
+						value: 28,
+						title: "OVS Host: <b>DevStack</b><br>Type: <b>OVSDB Host Manager</b><br>IP: <b>172.17.0.1</b>",
+						nodeDetails: {
+							type: "OVS Host",
+							hostname: "DevStack",
+							nodeId: ovsId,
+							ip: "172.17.0.1",
+						},
+					};
+					devstackNodes.unshift(ovsNode);
 				}
 
-				if (brIntNode) {
-					// Patch link between br-int and br-ex
-					devstackLinks.push({
-						from: brIntNode.id,
-						to: brExId,
-						title: "Patch Link: <b>patch-br-int-to-br-ex</b>",
-						width: 3,
-						color: { color: "#818cf8" },
-					});
+				// 2. Ensure Integration Bridge (br-int) ALWAYS exists
+				let brIntNode = devstackNodes.find((n) => n.group === "bridge-int");
+				const vmTps = (vmsList || []).map((v) => ({
+					tpId: v.logicalPort || `tap-${String(v.id || "").slice(0, 8)}`,
+					ifaceType: "tap",
+					mac: v.mac || v.ip || "fa:16:3e:xx:xx:xx",
+				}));
 
-					// Attach DevStack VMs to br-int
-					vms.forEach((vm) => {
-						const vmId = `vm-${vm.id}`;
-						const vmLabel = `${vm.name || "VM"}\n${vm.ip || ""}`;
+				if (!brIntNode) {
+					const brIntId = "br-int";
+					brIntNode = {
+						id: brIntId,
+						label: "Integration Bridge (br-int)",
+						group: "bridge-int",
+						value: 26,
+						title: "Bridge: <b>br-int</b><br>Type: <b>Integration Bridge (DevStack OVN)</b>",
+						nodeDetails: {
+							type: "Integration Bridge",
+							bridgeName: "br-int",
+							nodeId: brIntId,
+							tps: [
+								{ tpId: "patch-br-int-to-br-ex", ifaceType: "patch" },
+								...vmTps,
+								{ tpId: "br-int", ifaceType: "internal" },
+							],
+						},
+					};
+					devstackNodes.push(brIntNode);
+				} else {
+					brIntNode.nodeDetails = {
+						...brIntNode.nodeDetails,
+						type: "Integration Bridge",
+						tps: [
+							{ tpId: "patch-br-int-to-br-ex", ifaceType: "patch" },
+							...vmTps,
+							{ tpId: "br-int", ifaceType: "internal" },
+						],
+					};
+				}
+
+				// 3. Ensure External Bridge (br-ex) ALWAYS exists
+				let brExNode = devstackNodes.find((n) => n.group === "bridge-ex");
+				if (!brExNode) {
+					const brExId = "br-ex";
+					brExNode = {
+						id: brExId,
+						label: "External Bridge (br-ex)",
+						group: "bridge-ex",
+						value: 22,
+						title: "Bridge: <b>br-ex</b><br>Type: <b>External Uplink Bridge</b>",
+						nodeDetails: {
+							type: "External Bridge",
+							bridgeName: "br-ex",
+							nodeId: brExId,
+							tps: [
+								{ tpId: "patch-br-ex-to-br-int", ifaceType: "patch" },
+								{ tpId: "eth0", ifaceType: "system" },
+								{ tpId: "br-ex", ifaceType: "internal" },
+							],
+						},
+					};
+					devstackNodes.push(brExNode);
+				}
+
+				// 4. Link OVS Host <-> br-int
+				devstackLinks.push({
+					from: ovsNode.id,
+					to: brIntNode.id,
+					title: "OVSDB &harr; Integration Bridge",
+					dashes: true,
+					color: { color: "#818cf8" },
+					width: 1.5,
+				});
+
+				// 5. Patch Link br-int <-> br-ex (patch-br-int-to-br-ex)
+				devstackLinks.push({
+					from: brIntNode.id,
+					to: brExNode.id,
+					title: "Patch Link: <b>patch-br-int-to-br-ex</b>",
+					width: 3.5,
+					color: { color: "#818cf8", highlight: "#6366f1" },
+				});
+
+				// 6. Attach all DevStack VMs to br-int
+				(vmsList || []).forEach((vm) => {
+					const vmId = `vm-${vm.id}`;
+					const vmLabel = `${vm.name || "VM"}\n${vm.ip || ""}`;
+					if (!devstackNodes.some((n) => n.id === vmId)) {
 						devstackNodes.push({
 							id: vmId,
 							label: vmLabel,
@@ -497,20 +563,27 @@ const NetworkTopologySvc = {
 								allIps: vm.allIps,
 								network: vm.network,
 								logicalPort: vm.logicalPort,
+								tapPort: vm.logicalPort,
 								ifaceStatus: vm.status,
 							},
 						});
+					}
 
-						devstackLinks.push({
-							from: vmId,
-							to: brIntNode.id,
-							title: `VM Interface: <b>${vm.logicalPort?.slice(0, 11) || "tap"}</b><br>IP: <b>${vm.ip}</b>`,
-							width: 2,
-							color: { color: "#38bdf8" },
-						});
+					devstackLinks.push({
+						from: vmId,
+						to: brIntNode.id,
+						title: `VM Interface: <b>${vm.logicalPort?.slice(0, 11) || "tap"}</b><br>IP: <b>${vm.ip}</b>`,
+						width: 2,
+						color: { color: "#38bdf8" },
 					});
-				}
+				});
 
+				return { devstackNodes, devstackLinks };
+			};
+
+			// If targetTopology === 'ovsdb:1', return DevStack OVSDB topology
+			if (targetTopology === "ovsdb:1") {
+				const { devstackNodes, devstackLinks } = buildDevstackGraph(allNodes, vms);
 				return {
 					nodes: devstackNodes,
 					links: devstackLinks,
@@ -519,7 +592,26 @@ const NetworkTopologySvc = {
 				};
 			}
 
-			// Merged / All Topologies
+			// Merged / All Topologies: merge DevStack bridges & VMs into allNodes and allLinks
+			const { devstackNodes, devstackLinks } = buildDevstackGraph(allNodes, vms);
+			devstackNodes.forEach((dn) => {
+				const idx = allNodes.findIndex((n) => n.id === dn.id);
+				if (idx >= 0) {
+					allNodes[idx] = { ...allNodes[idx], ...dn };
+				} else {
+					allNodes.push(dn);
+				}
+			});
+			devstackLinks.forEach((dl) => {
+				const key1 = `${dl.from}||${dl.to}`;
+				const key2 = `${dl.to}||${dl.from}`;
+				if (!linksMap[key1] && !linksMap[key2]) {
+					allLinks.push(dl);
+					linksMap[key1] = true;
+					linksMap[key2] = true;
+				}
+			});
+
 			return {
 				nodes: allNodes,
 				links: allLinks,
