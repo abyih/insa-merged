@@ -144,6 +144,12 @@ function Header() {
       desc: "Cloud VM slicing, Neutron & OVS QoS",
     },
     {
+      label: "ODL Network Slicing",
+      icon: <Layers className="w-3.5 h-3.5 text-blue-400" />,
+      to: "/slicing/odl",
+      desc: "ODL Slicing integration",
+    },
+    {
       label: "Verification & Live Tests",
       icon: <Activity className="w-3.5 h-3.5 text-emerald-400" />,
       to: "/slicing/verification",
