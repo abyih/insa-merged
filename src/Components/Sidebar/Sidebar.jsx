@@ -13,6 +13,7 @@ const links = [
 	{ title: "Slicing Hub", link: "/slicing" },
 	{ title: "↳ ONOS Slicing", link: "/slicing/onos" },
 	{ title: "↳ OpenStack Slices", link: "/slicing/openstack" },
+	{ title: "↳ ODL Slicing", link: "/slicing/odl" },
 	{ title: "↳ Verification & Tests", link: "/slicing/verification" },
 	{ title: "Cloud", link: "/cloud" },
 	{ title: "VM Topology Map", link: "/vm-topology" },

@@ -15,9 +15,11 @@ import {
   Shield,
   Sparkles,
   RefreshCw,
+  Server,
 } from "lucide-react";
 import NetworkSlicing from "../NetworkSlicing";
 import NetworkSlices from "../NetworkSlices";
+import OdlSlicing from "../OdlSlicing/OdlSlicing";
 import SlicingVerification from "../SlicingVerification";
 
 export default function SlicingHub({ defaultTab = "overview" }) {
@@ -130,6 +132,20 @@ export default function SlicingHub({ defaultTab = "overview" }) {
             </span>
           </button>
 
+          <button
+            onClick={() => handleTabChange("odl")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+              activeTab === "odl"
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 border border-indigo-500/50"
+                : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60"
+            }`}
+          >
+            <Server className="w-4 h-4" />
+            <span>ODL Slicing</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded bg-zinc-950/60 text-[10px] font-mono text-blue-300">
+              OpenDaylight
+            </span>
+          </button>
           <button
             onClick={() => handleTabChange("verification")}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
@@ -339,6 +355,12 @@ export default function SlicingHub({ defaultTab = "overview" }) {
         </div>
       )}
 
+
+      {activeTab === "odl" && (
+        <div>
+          <OdlSlicing />
+        </div>
+      )}
       {activeTab === "verification" && (
         <div>
           <SlicingVerification />

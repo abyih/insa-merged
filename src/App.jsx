@@ -223,6 +223,7 @@ const App = () => (
               <Route path="/slicing/overview"     element={<SlicingHub defaultTab="overview" />} />
               <Route path="/slicing/onos"         element={<SlicingHub defaultTab="onos" />} />
               <Route path="/slicing/openstack"    element={<SlicingHub defaultTab="openstack" />} />
+              <Route path="/slicing/odl"          element={<SlicingHub defaultTab="odl" />} />
               <Route path="/slicing/verification" element={<SlicingHub defaultTab="verification" />} />
 
               {/* Slicing Backward Compatibility Aliases */}
