@@ -10,11 +10,8 @@ import {
   Network,
   ListCollapse,
   Activity,
-  CheckCircle2,
-  XCircle,
   Plus,
   RefreshCw,
-  Search,
   ChevronDown,
   Layers,
 } from "lucide-react";
