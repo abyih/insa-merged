@@ -866,39 +866,85 @@ app.get("/api/openstack/vm-topology-map", async (req, res) => {
       (p) => p.device_owner === "compute:nova",
     );
 
-    // Pull ODL's live node-connector list for br-int so we can match tap<id> names
+    // Detect if ONOS or ODL is the active controller
+    let controllerType = "odl";
+    let onosDevices = [];
+    try {
+      const onosRes = await fetch("http://localhost:8181/onos/v1/devices", {
+        headers: {
+          Authorization: "Basic " + Buffer.from("onos:rocks").toString("base64"),
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(2000),
+      });
+      if (onosRes.ok) {
+        const onosData = await onosRes.json();
+        onosDevices = onosData.devices || [];
+        controllerType = "onos";
+      }
+    } catch {}
+
     let odlConnectors = [];
     let brIntNodeId = null;
-    try {
-      brIntNodeId = await odlSync.findBrIntNodeId();
-      const odlRes = await fetch(
-        `${odlSync.__ODL_BASE || "http://localhost:8181"}/rests/data/opendaylight-inventory:nodes/node=${encodeURIComponent(
-          brIntNodeId,
-        )}?content=nonconfig`,
-        {
-          headers: {
-            Authorization: "Basic " + Buffer.from("admin:admin").toString("base64"),
-            Accept: "application/json",
-          },
-        },
+
+    if (controllerType === "onos") {
+      // Find OVSDB controller/device in ONOS (e.g. ovsdb:172.17.0.1)
+      const ovsdbDev = onosDevices.find(
+        (d) => (d.id?.includes("ovsdb") || d.type === "CONTROLLER") && d.available,
       );
-      if (odlRes.ok) {
-        const odlData = await odlRes.json();
-        const node = odlData["opendaylight-inventory:node"]?.[0];
-        odlConnectors = node?.["node-connector"] || [];
+      brIntNodeId = ovsdbDev ? `${ovsdbDev.id}/bridge/br-int` : "ovsdb:172.17.0.1/bridge/br-int";
+    } else {
+      // Pull ODL's live node-connector list for br-int so we can match tap<id> names
+      try {
+        brIntNodeId = await odlSync.findBrIntNodeId();
+        const odlRes = await fetch(
+          `${odlSync.__ODL_BASE || "http://localhost:8181"}/rests/data/opendaylight-inventory:nodes/node=${encodeURIComponent(
+            brIntNodeId,
+          )}?content=nonconfig`,
+          {
+            headers: {
+              Authorization: "Basic " + Buffer.from("admin:admin").toString("base64"),
+              Accept: "application/json",
+            },
+            signal: AbortSignal.timeout(2500),
+          },
+        );
+        if (odlRes.ok) {
+          const odlData = await odlRes.json();
+          const node = odlData["opendaylight-inventory:node"]?.[0];
+          odlConnectors = node?.["node-connector"] || [];
+        }
+      } catch (odlErr) {
+        console.error("ODL topology fetch (non-fatal):", odlErr.message);
       }
-    } catch (odlErr) {
-      console.error("ODL topology fetch (non-fatal):", odlErr.message);
     }
 
     const mapping = servers.map((server) => {
       const port = ports.find((p) => p.device_id === server.id);
       const tapName = port ? `tap${port.id.slice(0, 11)}` : null;
-      const connector = tapName
-        ? odlConnectors.find(
-            (nc) => nc["flow-node-inventory:name"] === tapName,
-          )
-        : null;
+
+      let connectorId = null;
+      let isVisible = false;
+
+      if (controllerType === "onos") {
+        // In ONOS: DevStack OVS host is connected via OVSDB, VM is active with TAP bound to br-int
+        const isBoundToBrInt =
+          port?.binding_vif_details?.bridge_name === "br-int" ||
+          port?.["binding:vif_details"]?.bridge_name === "br-int" ||
+          port?.status === "ACTIVE";
+        isVisible = server.status === "ACTIVE" && !!tapName && isBoundToBrInt;
+        connectorId = isVisible ? `${brIntNodeId}/${tapName}` : null;
+      } else {
+        // In ODL: Match tap interface name in ODL inventory
+        const connector = tapName
+          ? odlConnectors.find(
+              (nc) => nc["flow-node-inventory:name"] === tapName,
+            )
+          : null;
+        connectorId = connector?.id || null;
+        isVisible = !!connector;
+      }
+
       return {
         vmId: server.id,
         vmName: server.name,
@@ -907,12 +953,20 @@ app.get("/api/openstack/vm-topology-map", async (req, res) => {
         macAddress: port?.mac_address || null,
         ipAddress: port?.fixed_ips?.[0]?.ip_address || null,
         ovsInterface: tapName,
-        odlNodeConnectorId: connector?.id || null,
-        odlVisible: !!connector,
+        controllerNodeConnectorId: connectorId,
+        controllerVisible: isVisible,
+        // Backward compatibility
+        odlNodeConnectorId: connectorId,
+        odlVisible: isVisible,
       };
     });
 
-    res.json({ brIntNodeId, mapping });
+    res.json({
+      controllerType,
+      controllerName: controllerType === "onos" ? "ONOS" : "OpenDaylight",
+      brIntNodeId,
+      mapping,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

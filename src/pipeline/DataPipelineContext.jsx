@@ -179,10 +179,8 @@ export function DataPipelineProvider({ children }) {
     };
   }, []);
 
-  // ── Auto-poll every 15s after login ───────────────────────────────────────
+  // ── Auto-poll every 15s ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!isAuthenticated) return;
-
     dispatchNodes({ type: "LOADING" });
     dispatchFlows({ type: "LOADING" });
     dispatchStats({ type: "LOADING" });
@@ -197,7 +195,7 @@ export function DataPipelineProvider({ children }) {
       clearInterval(coreTimer);
       clearInterval(statsTimer);
     };
-  }, [isAuthenticated, fetchCoreData, fetchStats]);
+  }, [fetchCoreData, fetchStats]);
 
   const value = useMemo(() => ({
     nodes:     { ...nodesState,    fetch: fetchCoreData },

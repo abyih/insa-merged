@@ -211,41 +211,28 @@ const NodeDetails = ({ node }) => {
           ))}
         </div>
 
-        <div className="border-t border-zinc-800 pt-6 mt-6 grid grid-cols-1 md:grid-cols-2 gap-8 text-sm">
-          <div>
-            <h4 className="text-sm font-bold text-zinc-300 mb-3 uppercase tracking-wider text-xs">Group Capabilities</h4>
-            <div className="flex flex-wrap gap-2">
-              {node.groupFeatures.capabilities.map((cap, i) => (
-                <span key={i} className="bg-zinc-950 border border-zinc-850 text-zinc-400 text-xs px-3 py-1.5 rounded-lg font-medium">
-                  {cap.replace("opendaylight-group-types:", "")}
-                </span>
-              ))}
+        <div className="border-t border-zinc-800 pt-6 mt-6 text-sm">
+          <h4 className="text-sm font-bold text-zinc-300 mb-3 uppercase tracking-wider text-xs">Snapshot Status</h4>
+          <div className="bg-zinc-950/40 border border-zinc-850 rounded-xl p-4 space-y-2 text-zinc-400 max-w-lg">
+            <div className="flex justify-between">
+              <span>Start Time:</span>
+              <span className="font-semibold text-zinc-300">{formatDate(node.snapshot.start)}</span>
             </div>
-          </div>
-
-          <div>
-            <h4 className="text-sm font-bold text-zinc-300 mb-3 uppercase tracking-wider text-xs">Snapshot Status</h4>
-            <div className="bg-zinc-950/40 border border-zinc-850 rounded-xl p-4 space-y-2 text-zinc-400">
-              <div className="flex justify-between">
-                <span>Start Time:</span>
-                <span className="font-semibold text-zinc-300">{formatDate(node.snapshot.start)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>End Time:</span>
-                <span className="font-semibold text-zinc-300">{formatDate(node.snapshot.end)}</span>
-              </div>
-              <div className="flex justify-between items-center pt-1">
-                <span>Sync status:</span>
-                {node.snapshot.succeeded ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Successful
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-400">
-                    <XCircle className="w-3.5 h-3.5" /> Failed
-                  </span>
-                )}
-              </div>
+            <div className="flex justify-between">
+              <span>End Time:</span>
+              <span className="font-semibold text-zinc-300">{formatDate(node.snapshot.end)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1">
+              <span>Sync status:</span>
+              {node.snapshot.succeeded ? (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Successful
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-400">
+                  <XCircle className="w-3.5 h-3.5" /> Failed
+                </span>
+              )}
             </div>
           </div>
         </div>
