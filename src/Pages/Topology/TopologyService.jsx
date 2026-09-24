@@ -116,7 +116,8 @@ const NetworkTopologySvc = {
 				return activeDevIds.has(srcDev) && activeDevIds.has(dstDev);
 			});
 			const hosts = hostRes.hosts || [];
-			const vms = cloudRes?.virtualMachines || [];
+			const isCloudAvailable = Boolean(cloudRes && !cloudRes.error && Array.isArray(cloudRes.virtualMachines));
+			const vms = isCloudAvailable ? cloudRes.virtualMachines : [];
 
 			// Fetch ports for each device in parallel
 			const portsList = await Promise.all(
@@ -437,31 +438,44 @@ const NetworkTopologySvc = {
 			// Helper to construct DevStack OVSDB graph with bridges and VMs
 			const buildDevstackGraph = (allNodesList, vmsList) => {
 				const devstackNodes = allNodesList.filter(
-					(n) => n.group === "ovs-host" || n.group === "bridge-int"
+					(n) => n.group === "ovs-host" || n.group === "bridge-int" || n.group === "bridge-ex"
 				);
 				const devstackLinks = [];
 
-				// 1. Ensure OVS Host exists
+				// If DevStack is disconnected and there are no live OVS nodes from controller, DO NOT FABRICATE!
+				if (!isCloudAvailable && devstackNodes.length === 0) {
+					return { devstackNodes: [], devstackLinks: [] };
+				}
+
+				// Resolve real DevStack Host IP from Keystone configuration if available
+				let devstackIp = "192.168.122.156";
+				try {
+					if (cloudRes?.keystoneUrl) {
+						devstackIp = new URL(cloudRes.keystoneUrl).hostname || devstackIp;
+					}
+				} catch (_) {}
+
+				// 1. OVS Host (only instantiate if cloud is confirmed live and not already reported)
 				let ovsNode = devstackNodes.find((n) => n.group === "ovs-host");
-				if (!ovsNode) {
-					const ovsId = "ovsdb:172.17.0.1";
+				if (!ovsNode && isCloudAvailable) {
+					const ovsId = `ovsdb:${devstackIp}`;
 					ovsNode = {
 						id: ovsId,
-						label: "OVS Host (DevStack)",
+						label: `OVS Host (${devstackIp})`,
 						group: "ovs-host",
 						value: 28,
-						title: "OVS Host: <b>DevStack</b><br>Type: <b>OVSDB Host Manager</b><br>IP: <b>172.17.0.1</b>",
+						title: `OVS Host: <b>DevStack</b><br>Type: <b>OVSDB Host Manager</b><br>IP: <b>${devstackIp}</b>`,
 						nodeDetails: {
 							type: "OVS Host",
 							hostname: "DevStack",
 							nodeId: ovsId,
-							ip: "172.17.0.1",
+							ip: devstackIp,
 						},
 					};
 					devstackNodes.unshift(ovsNode);
 				}
 
-				// 2. Ensure Integration Bridge (br-int) ALWAYS exists
+				// 2. Integration Bridge (br-int)
 				let brIntNode = devstackNodes.find((n) => n.group === "bridge-int");
 				const vmTps = (vmsList || []).map((v) => ({
 					tpId: v.logicalPort || `tap-${String(v.id || "").slice(0, 8)}`,
@@ -469,7 +483,7 @@ const NetworkTopologySvc = {
 					mac: v.mac || v.ip || "fa:16:3e:xx:xx:xx",
 				}));
 
-				if (!brIntNode) {
+				if (!brIntNode && isCloudAvailable) {
 					const brIntId = "br-int";
 					brIntNode = {
 						id: brIntId,
@@ -489,7 +503,7 @@ const NetworkTopologySvc = {
 						},
 					};
 					devstackNodes.push(brIntNode);
-				} else {
+				} else if (brIntNode) {
 					brIntNode.nodeDetails = {
 						...brIntNode.nodeDetails,
 						type: "Integration Bridge",
@@ -501,9 +515,9 @@ const NetworkTopologySvc = {
 					};
 				}
 
-				// 3. Ensure External Bridge (br-ex) ALWAYS exists
+				// 3. External Bridge (br-ex)
 				let brExNode = devstackNodes.find((n) => n.group === "bridge-ex");
-				if (!brExNode) {
+				if (!brExNode && isCloudAvailable) {
 					const brExId = "br-ex";
 					brExNode = {
 						id: brExId,
@@ -525,58 +539,64 @@ const NetworkTopologySvc = {
 					devstackNodes.push(brExNode);
 				}
 
-				// 4. Link OVS Host <-> br-int
-				devstackLinks.push({
-					from: ovsNode.id,
-					to: brIntNode.id,
-					title: "OVSDB &harr; Integration Bridge",
-					dashes: true,
-					color: { color: "#818cf8" },
-					width: 1.5,
-				});
+				// 4. Link OVS Host <-> br-int (only if both actually exist)
+				if (ovsNode && brIntNode) {
+					devstackLinks.push({
+						from: ovsNode.id,
+						to: brIntNode.id,
+						title: "OVSDB &harr; Integration Bridge",
+						dashes: true,
+						color: { color: "#818cf8" },
+						width: 1.5,
+					});
+				}
 
-				// 5. Patch Link br-int <-> br-ex (patch-br-int-to-br-ex)
-				devstackLinks.push({
-					from: brIntNode.id,
-					to: brExNode.id,
-					title: "Patch Link: <b>patch-br-int-to-br-ex</b>",
-					width: 3.5,
-					color: { color: "#818cf8", highlight: "#6366f1" },
-				});
+				// 5. Patch Link br-int <-> br-ex (only if both actually exist)
+				if (brIntNode && brExNode) {
+					devstackLinks.push({
+						from: brIntNode.id,
+						to: brExNode.id,
+						title: "Patch Link: <b>patch-br-int-to-br-ex</b>",
+						width: 3.5,
+						color: { color: "#818cf8", highlight: "#6366f1" },
+					});
+				}
 
 				// 6. Attach all DevStack VMs to br-int
-				(vmsList || []).forEach((vm) => {
-					const vmId = `vm-${vm.id}`;
-					const vmLabel = `${vm.name || "VM"}\n${vm.ip || ""}`;
-					if (!devstackNodes.some((n) => n.id === vmId)) {
-						devstackNodes.push({
-							id: vmId,
-							label: vmLabel,
-							group: "vm",
-							value: 18,
-							title: `VM: <b>${vm.name}</b><br>IP: <b>${vm.ip}</b><br>Status: <b>${vm.status}</b><br>Network: ${vm.network || "N/A"}<br>Port: ${vm.logicalPort || "N/A"}`,
-							nodeDetails: {
-								type: "Virtual Machine",
-								vmUuid: vm.id,
-								vmName: vm.name,
-								ip: vm.ip,
-								allIps: vm.allIps,
-								network: vm.network,
-								logicalPort: vm.logicalPort,
-								tapPort: vm.logicalPort,
-								ifaceStatus: vm.status,
-							},
-						});
-					}
+				if (brIntNode && isCloudAvailable) {
+					(vmsList || []).forEach((vm) => {
+						const vmId = `vm-${vm.id}`;
+						const vmLabel = `${vm.name || "VM"}\n${vm.ip || ""}`;
+						if (!devstackNodes.some((n) => n.id === vmId)) {
+							devstackNodes.push({
+								id: vmId,
+								label: vmLabel,
+								group: "vm",
+								value: 18,
+								title: `VM: <b>${vm.name}</b><br>IP: <b>${vm.ip}</b><br>Status: <b>${vm.status}</b><br>Network: ${vm.network || "N/A"}<br>Port: ${vm.logicalPort || "N/A"}`,
+								nodeDetails: {
+									type: "Virtual Machine",
+									vmUuid: vm.id,
+									vmName: vm.name,
+									ip: vm.ip,
+									allIps: vm.allIps,
+									network: vm.network,
+									logicalPort: vm.logicalPort,
+									tapPort: vm.logicalPort,
+									ifaceStatus: vm.status,
+								},
+							});
+						}
 
-					devstackLinks.push({
-						from: vmId,
-						to: brIntNode.id,
-						title: `VM Interface: <b>${vm.logicalPort?.slice(0, 11) || "tap"}</b><br>IP: <b>${vm.ip}</b>`,
-						width: 2,
-						color: { color: "#38bdf8" },
+						devstackLinks.push({
+							from: vmId,
+							to: brIntNode.id,
+							title: `VM Interface: <b>${vm.logicalPort?.slice(0, 11) || "tap"}</b><br>IP: <b>${vm.ip}</b>`,
+							width: 2,
+							color: { color: "#38bdf8" },
+						});
 					});
-				});
+				}
 
 				return { devstackNodes, devstackLinks };
 			};
@@ -588,35 +608,42 @@ const NetworkTopologySvc = {
 					nodes: devstackNodes,
 					links: devstackLinks,
 					dots: [],
-					rawTopologies: [{ "topology-id": "ovsdb:1", devices: devstackNodes, vms }],
+					rawTopologies: [{
+						"topology-id": "ovsdb:1",
+						devices: devstackNodes,
+						vms,
+						status: isCloudAvailable ? "connected" : "disconnected",
+					}],
 				};
 			}
 
-			// Merged / All Topologies: merge DevStack bridges & VMs into allNodes and allLinks
+			// Merged / All Topologies: merge DevStack bridges & VMs into allNodes and allLinks only if they exist
 			const { devstackNodes, devstackLinks } = buildDevstackGraph(allNodes, vms);
-			devstackNodes.forEach((dn) => {
-				const idx = allNodes.findIndex((n) => n.id === dn.id);
-				if (idx >= 0) {
-					allNodes[idx] = { ...allNodes[idx], ...dn };
-				} else {
-					allNodes.push(dn);
-				}
-			});
-			devstackLinks.forEach((dl) => {
-				const key1 = `${dl.from}||${dl.to}`;
-				const key2 = `${dl.to}||${dl.from}`;
-				if (!linksMap[key1] && !linksMap[key2]) {
-					allLinks.push(dl);
-					linksMap[key1] = true;
-					linksMap[key2] = true;
-				}
-			});
+			if (devstackNodes.length > 0) {
+				devstackNodes.forEach((dn) => {
+					const idx = allNodes.findIndex((n) => n.id === dn.id);
+					if (idx >= 0) {
+						allNodes[idx] = { ...allNodes[idx], ...dn };
+					} else {
+						allNodes.push(dn);
+					}
+				});
+				devstackLinks.forEach((dl) => {
+					const key1 = `${dl.from}||${dl.to}`;
+					const key2 = `${dl.to}||${dl.from}`;
+					if (!linksMap[key1] && !linksMap[key2]) {
+						allLinks.push(dl);
+						linksMap[key1] = true;
+						linksMap[key2] = true;
+					}
+				});
+			}
 
 			return {
 				nodes: allNodes,
 				links: allLinks,
 				dots: [],
-				rawTopologies: [{ "topology-id": "onos:topology", devices, links, hosts, vms }],
+				rawTopologies: [{ "topology-id": "onos:topology", devices, links, hosts, vms, devstackConnected: isCloudAvailable }],
 			};
 		} catch (err) {
 			console.warn("[TopologyService] ONOS topology fetch failed:", err);

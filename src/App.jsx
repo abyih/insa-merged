@@ -99,151 +99,167 @@ function TopologyRoute() {
   const displayedDevstackTopo = React.useMemo(() => {
     if (!devstackTopo) return null;
 
+    const isCloudLive = Boolean(cloudData && !cloudData.error && Array.isArray(cloudData.virtualMachines));
     let nodes = [...(devstackTopo.nodes || [])];
     let links = [...(devstackTopo.links || [])];
 
-    // 1. Ensure OVS Host exists
-    let ovsNode = nodes.find((n) => n.group === "ovs-host");
-    if (!ovsNode) {
-      const ovsId = "ovsdb://192.168.122.156:6640";
-      ovsNode = {
-        id: ovsId,
-        label: "OVS Host (DevStack)",
-        group: "ovs-host",
-        value: 28,
-        title: "OVS Host: <b>DevStack</b><br>Type: <b>OVSDB Host Manager</b><br>IP: <b>192.168.122.156</b>",
-        nodeDetails: {
-          type: "OVS Host",
-          hostname: "DevStack",
-          nodeId: ovsId,
-          ip: "192.168.122.156",
-        },
-      };
-      nodes.unshift(ovsNode);
+    // If cloud is not live and there are no live OVS nodes, do not fabricate anything
+    if (!isCloudLive && nodes.length === 0) {
+      return { ...devstackTopo, nodes: [], links: [] };
     }
 
-    // 2. Ensure Integration Bridge (br-int) exists
-    let brIntNode = nodes.find((n) => n.group === "bridge-int");
-    if (!brIntNode) {
-      const brIntId = "bridge/br-int";
-      brIntNode = {
-        id: brIntId,
-        label: "Integration Bridge (br-int)",
-        group: "bridge-int",
-        value: 26,
-        title: "Bridge: <b>br-int</b><br>Type: <b>Integration Bridge (DevStack OVN)</b>",
-        nodeDetails: {
-          type: "Integration Bridge",
-          bridgeName: "br-int",
-          nodeId: brIntId,
-        },
-      };
-      nodes.push(brIntNode);
-    }
-
-    // 3. Ensure External Bridge (br-ex) exists
-    let brExNode = nodes.find((n) => n.group === "bridge-ex");
-    if (!brExNode) {
-      const brExId = "bridge/br-ex";
-      brExNode = {
-        id: brExId,
-        label: "External Bridge (br-ex)",
-        group: "bridge-ex",
-        value: 22,
-        title: "Bridge: <b>br-ex</b><br>Type: <b>External Uplink Bridge</b>",
-        nodeDetails: {
-          type: "External Bridge",
-          bridgeName: "br-ex",
-          nodeId: brExId,
-        },
-      };
-      nodes.push(brExNode);
-    }
-
-    // 4. Ensure Link OVS Host <-> br-int exists
-    const hasHostIntLink = links.some(
-      (l) => (l.from === ovsNode.id && l.to === brIntNode.id) || (l.from === brIntNode.id && l.to === ovsNode.id)
-    );
-    if (!hasHostIntLink) {
-      links.push({
-        from: ovsNode.id,
-        to: brIntNode.id,
-        title: "OVSDB ↔ Integration Bridge",
-        dashes: true,
-        color: { color: "#818cf8" },
-        width: 1.5,
-      });
-    }
-
-    // 5. Ensure Patch Link br-int <-> br-ex exists
-    const hasPatchLink = links.some(
-      (l) => (l.from === brIntNode.id && l.to === brExNode.id) || (l.from === brExNode.id && l.to === brIntNode.id)
-    );
-    if (!hasPatchLink) {
-      links.push({
-        from: brIntNode.id,
-        to: brExNode.id,
-        title: "Patch Link: <b>patch-br-int-to-br-ex</b>",
-        width: 3.5,
-        color: { color: "#818cf8", highlight: "#6366f1" },
-      });
-    }
-
-    // 6. Merge & Attach OpenStack VMs from cloud-summary
-    const cloudVms = cloudData?.virtualMachines || [];
-    cloudVms.forEach((vm) => {
-      const vmId = `vm-${vm.id}`;
-      const vmLabel = `${vm.name || "VM"}\n${vm.ip || ""}`;
-      const existingVmNode = nodes.find((n) => n.id === vmId || n.nodeDetails?.vmUuid === vm.id);
-      if (!existingVmNode) {
-        nodes.push({
-          id: vmId,
-          label: vmLabel,
-          group: "vm",
-          value: 18,
-          title: `VM: <b>${vm.name}</b><br>IP: <b>${vm.ip}</b><br>Status: <b>${vm.status}</b><br>Network: ${vm.network || "N/A"}<br>Port: ${vm.logicalPort || "N/A"}`,
+    if (isCloudLive) {
+      // 1. Ensure OVS Host exists
+      let ovsNode = nodes.find((n) => n.group === "ovs-host");
+      if (!ovsNode) {
+        const ovsId = "ovsdb://192.168.122.156:6640";
+        ovsNode = {
+          id: ovsId,
+          label: "OVS Host (DevStack)",
+          group: "ovs-host",
+          value: 28,
+          title: "OVS Host: <b>DevStack</b><br>Type: <b>OVSDB Host Manager</b><br>IP: <b>192.168.122.156</b>",
           nodeDetails: {
-            type: "Virtual Machine",
-            vmUuid: vm.id,
-            vmName: vm.name,
-            ip: vm.ip,
-            allIps: vm.allIps,
-            network: vm.network,
-            logicalPort: vm.logicalPort,
-            ifaceStatus: vm.status,
+            type: "OVS Host",
+            hostname: "DevStack",
+            nodeId: ovsId,
+            ip: "192.168.122.156",
           },
-        });
+        };
+        nodes.unshift(ovsNode);
       }
 
-      // Link VM to br-int
-      const targetVmId = existingVmNode ? existingVmNode.id : vmId;
-      const isVmLinked = links.some(
-        (l) => (l.from === targetVmId && l.to === brIntNode.id) || (l.from === brIntNode.id && l.to === targetVmId)
-      );
-      if (!isVmLinked) {
-        links.push({
-          from: targetVmId,
-          to: brIntNode.id,
-          title: `VM Interface: <b>${vm.logicalPort?.slice(0, 11) || "tap"}</b><br>IP: <b>${vm.ip}</b>`,
-          width: 2,
-          color: { color: "#38bdf8" },
-        });
+      // 2. Ensure Integration Bridge (br-int) exists
+      let brIntNode = nodes.find((n) => n.group === "bridge-int");
+      if (!brIntNode) {
+        const brIntId = "bridge/br-int";
+        brIntNode = {
+          id: brIntId,
+          label: "Integration Bridge (br-int)",
+          group: "bridge-int",
+          value: 26,
+          title: "Bridge: <b>br-int</b><br>Type: <b>Integration Bridge (DevStack OVN)</b>",
+          nodeDetails: {
+            type: "Integration Bridge",
+            bridgeName: "br-int",
+            nodeId: brIntId,
+          },
+        };
+        nodes.push(brIntNode);
       }
-    });
 
-    // 7. Ensure ANY VM node currently in nodes has a link to br-int (never floating)
-    nodes.filter((n) => n.group === "vm").forEach((vmNode) => {
-      const isLinked = links.some((l) => l.from === vmNode.id || l.to === vmNode.id);
-      if (!isLinked) {
-        links.push({
-          from: vmNode.id,
-          to: brIntNode.id,
-          title: `VM Interface: <b>${vmNode.nodeDetails?.tapPort || "tap"}</b>`,
-          width: 2,
-          color: { color: "#38bdf8" },
+      // 3. Ensure External Bridge (br-ex) exists
+      let brExNode = nodes.find((n) => n.group === "bridge-ex");
+      if (!brExNode) {
+        const brExId = "bridge/br-ex";
+        brExNode = {
+          id: brExId,
+          label: "External Bridge (br-ex)",
+          group: "bridge-ex",
+          value: 22,
+          title: "Bridge: <b>br-ex</b><br>Type: <b>External Uplink Bridge</b>",
+          nodeDetails: {
+            type: "External Bridge",
+            bridgeName: "br-ex",
+            nodeId: brExId,
+          },
+        };
+        nodes.push(brExNode);
+      }
+
+      // 4. Ensure Link OVS Host <-> br-int exists
+      if (ovsNode && brIntNode) {
+        const hasHostIntLink = links.some(
+          (l) => (l.from === ovsNode.id && l.to === brIntNode.id) || (l.from === brIntNode.id && l.to === ovsNode.id)
+        );
+        if (!hasHostIntLink) {
+          links.push({
+            from: ovsNode.id,
+            to: brIntNode.id,
+            title: "OVSDB ↔ Integration Bridge",
+            dashes: true,
+            color: { color: "#818cf8" },
+            width: 1.5,
+          });
+        }
+      }
+
+      // 5. Ensure Patch Link br-int <-> br-ex exists
+      if (brIntNode && brExNode) {
+        const hasPatchLink = links.some(
+          (l) => (l.from === brIntNode.id && l.to === brExNode.id) || (l.from === brExNode.id && l.to === brIntNode.id)
+        );
+        if (!hasPatchLink) {
+          links.push({
+            from: brIntNode.id,
+            to: brExNode.id,
+            title: "Patch Link: <b>patch-br-int-to-br-ex</b>",
+            width: 3.5,
+            color: { color: "#818cf8", highlight: "#6366f1" },
+          });
+        }
+      }
+
+      // 6. Merge & Attach OpenStack VMs from cloud-summary
+      const cloudVms = cloudData?.virtualMachines || [];
+      cloudVms.forEach((vm) => {
+        const vmId = `vm-${vm.id}`;
+        const vmLabel = `${vm.name || "VM"}\n${vm.ip || ""}`;
+        const existingVmNode = nodes.find((n) => n.id === vmId || n.nodeDetails?.vmUuid === vm.id);
+        if (!existingVmNode) {
+          nodes.push({
+            id: vmId,
+            label: vmLabel,
+            group: "vm",
+            value: 18,
+            title: `VM: <b>${vm.name}</b><br>IP: <b>${vm.ip}</b><br>Status: <b>${vm.status}</b><br>Network: ${vm.network || "N/A"}<br>Port: ${vm.logicalPort || "N/A"}`,
+            nodeDetails: {
+              type: "Virtual Machine",
+              vmUuid: vm.id,
+              vmName: vm.name,
+              ip: vm.ip,
+              allIps: vm.allIps,
+              network: vm.network,
+              logicalPort: vm.logicalPort,
+              ifaceStatus: vm.status,
+            },
+          });
+        }
+
+        // Link VM to br-int
+        if (brIntNode) {
+          const targetVmId = existingVmNode ? existingVmNode.id : vmId;
+          const isVmLinked = links.some(
+            (l) => (l.from === targetVmId && l.to === brIntNode.id) || (l.from === brIntNode.id && l.to === targetVmId)
+          );
+          if (!isVmLinked) {
+            links.push({
+              from: targetVmId,
+              to: brIntNode.id,
+              title: `VM Interface: <b>${vm.logicalPort?.slice(0, 11) || "tap"}</b><br>IP: <b>${vm.ip}</b>`,
+              width: 2,
+              color: { color: "#38bdf8" },
+            });
+          }
+        }
+      });
+
+      // 7. Ensure ANY VM node currently in nodes has a link to br-int (never floating)
+      if (brIntNode) {
+        nodes.filter((n) => n.group === "vm").forEach((vmNode) => {
+          const isLinked = links.some((l) => l.from === vmNode.id || l.to === vmNode.id);
+          if (!isLinked) {
+            links.push({
+              from: vmNode.id,
+              to: brIntNode.id,
+              title: `VM Interface: <b>${vmNode.nodeDetails?.tapPort || "tap"}</b>`,
+              width: 2,
+              color: { color: "#38bdf8" },
+            });
+          }
         });
       }
-    });
+    }
 
     // 8. Cross-check filter: if enabled, remove foreign/stale VMs
     if (crossCheck && cloudVms.length > 0) {
@@ -342,7 +358,7 @@ function TopologyRoute() {
         {
           crossCheckOpenstack: crossCheck,
           onToggleCrossCheck: (val) => setCrossCheck(val),
-          openstackConnected: Boolean(cloudData?.virtualMachines),
+          openstackConnected: Boolean(cloudData && !cloudData.error && Array.isArray(cloudData.virtualMachines)),
         }
       )}
     </div>

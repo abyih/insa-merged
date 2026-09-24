@@ -123,7 +123,7 @@ export const mapNodes = (rawData, topologyData) => {
 				? "Host"
 				: "OpenFlow Switch");
 
-		let status = "up";
+		let status = tn.status || (nodeDetails.available === false || nodeDetails.status === "down" ? "down" : "up");
 		if (type === "Virtual Machine" && nodeDetails.ifaceStatus) {
 			status = nodeDetails.ifaceStatus.toLowerCase() === "active" ? "up" : "down";
 		}

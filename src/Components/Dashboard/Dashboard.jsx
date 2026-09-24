@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useNodes, useStats, useFlowStats } from "../../pipeline/DataPipelineContext";
 import { motion } from "framer-motion";
 import {
@@ -83,6 +83,34 @@ function Dashboard() {
   const { data: rawConnectionStats } = useStats();
   const { data: rawFlowStats } = useFlowStats();
 
+  const [cloudSummary, setCloudSummary] = useState(null);
+  const [cloudLoading, setCloudLoading] = useState(true);
+
+  const fetchCloud = useCallback(async () => {
+    try {
+      setCloudLoading(true);
+      const res = await fetch("/api/openstack/cloud-summary");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && !data.error) {
+          setCloudSummary(data);
+        } else {
+          setCloudSummary(null);
+        }
+      } else {
+        setCloudSummary(null);
+      }
+    } catch {
+      setCloudSummary(null);
+    } finally {
+      setCloudLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCloud();
+  }, [fetchCloud]);
+
   const nodes = Array.isArray(rawNodes) ? rawNodes : [];
   const connectionStats = Array.isArray(rawConnectionStats)
     ? rawConnectionStats
@@ -117,11 +145,19 @@ function Dashboard() {
     [nodes]
   );
 
+  const isDevstackLive = Boolean(
+    cloudSummary &&
+      !cloudSummary.error &&
+      ((cloudSummary.virtualMachines && cloudSummary.virtualMachines.length > 0) ||
+        ovsHosts.length > 0 ||
+        ovsBridges.length > 0)
+  );
+
   const deviceCount = nodes.length;
   const connectedCount = nodes.filter((n) => n.status === "up").length;
   const flowCount = flowStats.length;
 
-  // Topology Distribution Chart Data
+  // Topology Distribution Chart Data - ONLY real live detected devices
   const deviceDistributionData = useMemo(() => {
     const list = [
       { name: "DevStack Bridges", value: ovsBridges.length, color: "#6366f1" },
@@ -131,13 +167,7 @@ function Dashboard() {
       { name: "Host Trackers", value: hostNodes.length, color: "#3b82f6" },
     ].filter((item) => item.value > 0);
 
-    return list.length > 0
-      ? list
-      : [
-          { name: "DevStack Bridges", value: 2, color: "#6366f1" },
-          { name: "Virtual Machines", value: 4, color: "#10b981" },
-          { name: "OVS Hosts", value: 1, color: "#f59e0b" },
-        ];
+    return list;
   }, [ovsBridges, vms, openflowSwitches, ovsHosts, hostNodes]);
 
   // Top 6 flows for bar chart
@@ -261,13 +291,27 @@ function Dashboard() {
         <StatCard
           title="DevStack Bridges"
           value={ovsBridges.length}
-          subtitle="br-int & br-ex"
+          subtitle={
+            ovsBridges.length > 0
+              ? ovsBridges.map((b) => b.nodeDetails?.bridgeName || b.id).join(" & ")
+              : cloudLoading
+              ? "Checking..."
+              : isDevstackLive
+              ? "0 Detected"
+              : "Offline / Disconnected"
+          }
           icon={<Layers className="w-5 h-5 text-cyan-400" />}
         />
         <StatCard
           title="Virtual Machines"
           value={vms.length}
-          subtitle="OpenStack Instances"
+          subtitle={
+            !isDevstackLive
+              ? "Cloud Unreachable"
+              : vms.length > 0
+              ? `${vms.length} Instance${vms.length > 1 ? "s" : ""} Active`
+              : "0 Instances"
+          }
           icon={<Box className="w-5 h-5 text-emerald-400" />}
         />
         <StatCard
@@ -381,7 +425,7 @@ function Dashboard() {
                       OVS Version / DB Version
                     </span>
                     <span className="text-zinc-300 font-medium block mt-1">
-                      {host.nodeDetails?.ovsVersion || "3.3.4"} (DB: {host.nodeDetails?.dbVersion || "8.5.1"})
+                      {host.nodeDetails?.ovsVersion ? `${host.nodeDetails.ovsVersion} (DB: ${host.nodeDetails.dbVersion || "N/A"})` : "N/A"}
                     </span>
                   </div>
                   <div>
@@ -389,7 +433,7 @@ function Dashboard() {
                       OVN Encap IP
                     </span>
                     <span className="text-indigo-400 font-mono font-semibold block mt-1">
-                      {host.nodeDetails?.externalIds?.["ovn-encap-ip"] || "172.27.189.3"}
+                      {host.nodeDetails?.externalIds?.["ovn-encap-ip"] || host.nodeDetails?.ip || "N/A"}
                     </span>
                   </div>
                   <div>
@@ -397,12 +441,12 @@ function Dashboard() {
                       OVN Remote Controller
                     </span>
                     <span className="text-emerald-400 font-mono font-semibold block mt-1">
-                      {host.nodeDetails?.externalIds?.["ovn-remote"] || "tcp:172.27.189.3:6642"}
+                      {host.nodeDetails?.externalIds?.["ovn-remote"] || "N/A"}
                     </span>
                   </div>
                 </div>
               ))
-            ) : (
+            ) : isDevstackLive ? (
               <div className="bg-zinc-950/40 border border-zinc-850 p-4 rounded-xl flex items-center justify-between text-xs text-zinc-400">
                 <span className="flex items-center gap-2">
                   <Terminal className="w-4 h-4 text-indigo-400" />
@@ -410,6 +454,21 @@ function Dashboard() {
                 </span>
                 <span className="text-emerald-400 font-semibold flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Active Topology
+                </span>
+              </div>
+            ) : (
+              <div className="bg-red-950/20 border border-red-900/30 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-red-300/80">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></div>
+                  <div>
+                    <span className="font-semibold text-red-200 block">DevStack Cloud Integration Disconnected</span>
+                    <span className="text-red-400/80 text-[11px] block mt-0.5">
+                      OpenStack is unreachable at http://192.168.122.156/identity/v3. No OVSDB bridges or instances active.
+                    </span>
+                  </div>
+                </div>
+                <span className="text-red-400 font-mono text-[11px] bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg self-start sm:self-auto font-semibold">
+                  DISCONNECTED
                 </span>
               </div>
             )}
@@ -467,7 +526,9 @@ function Dashboard() {
                       {ovsBridges.length === 0 && (
                         <tr>
                           <td colSpan={4} className="text-center py-8 text-zinc-500">
-                            No DevStack bridges found in active topology
+                            {isDevstackLive
+                              ? "No DevStack bridges found in active topology"
+                              : "DevStack is disconnected — 0 bridges detected"}
                           </td>
                         </tr>
                       )}
@@ -524,7 +585,9 @@ function Dashboard() {
                       {vms.length === 0 && (
                         <tr>
                           <td colSpan={4} className="text-center py-8 text-zinc-500">
-                            No virtual machines detected on DevStack bridge ports
+                            {isDevstackLive
+                              ? "No virtual machines detected on DevStack bridge ports"
+                              : "DevStack is disconnected — 0 instances detected"}
                           </td>
                         </tr>
                       )}
@@ -705,33 +768,40 @@ function Dashboard() {
         </ChartCard>
 
         <ChartCard title="Topology Device Breakdown">
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie
-                data={deviceDistributionData}
-                dataKey="value"
-                outerRadius={80}
-                innerRadius={40}
-                paddingAngle={2}
-                label={({ name, percent }) =>
-                  percent > 0 ? `${name} ${(percent * 100).toFixed(0)}%` : ""
-                }
-              >
-                {deviceDistributionData.map((e, i) => (
-                  <Cell key={i} fill={e.color} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "var(--theme-card)",
-                  borderColor: "var(--theme-card-border)",
-                  borderRadius: "8px",
-                  color: "var(--theme-fg)",
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }} />
-            </PieChart>
-          </ResponsiveContainer>
+          {deviceDistributionData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie
+                  data={deviceDistributionData}
+                  dataKey="value"
+                  outerRadius={80}
+                  innerRadius={40}
+                  paddingAngle={2}
+                  label={({ name, percent }) =>
+                    percent > 0 ? `${name} ${(percent * 100).toFixed(0)}%` : ""
+                  }
+                >
+                  {deviceDistributionData.map((e, i) => (
+                    <Cell key={i} fill={e.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "var(--theme-card)",
+                    borderColor: "var(--theme-card-border)",
+                    borderRadius: "8px",
+                    color: "var(--theme-fg)",
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[260px] flex flex-col items-center justify-center text-zinc-500 text-xs gap-2">
+              <Network className="w-8 h-8 text-zinc-600" />
+              <span>No active devices connected</span>
+            </div>
+          )}
         </ChartCard>
       </div>
 
