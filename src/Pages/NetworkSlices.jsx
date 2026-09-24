@@ -62,6 +62,34 @@ const PRIORITY_COLORS = {
   LOW: "bg-slate-500/20 text-slate-400",
 };
 
+function TestResult({ result }) {
+  if (!result) return null;
+  const { type, data } = result;
+  let ok = result.ok;
+  const n = (x) => (typeof x === "number" ? x.toFixed(1) : "?");
+  let text;
+  if (!ok) {
+    text = `${type} test failed: ${data?.error || "no result"}`;
+  } else if (type === "bandwidth") {
+    text = `Bandwidth: ${n(data.mbps)} Mbps measured vs ${data.perVmMbps ?? "?"} Mbps per VM (slice total ${data.capMbps ?? "?"} Mbps) - ${data.underDelivering ? "under-delivering" : "OK"}`;
+  } else if (type === "priority") {
+    if (!data.dscp46?.success || !data.unmarked?.success) {
+      text = "Priority test: one of the flows failed - run it again";
+      ok = false;
+    } else {
+      text = `Priority: DSCP 46 fast lane ${n(data.dscp46.mbps)} Mbps vs unmarked ${n(data.unmarked.mbps)} Mbps - ${data.fastLaneWon ? "fast lane won" : "fast lane did NOT win"}`;
+    }
+  } else {
+    text = `Latency: avg ${n(data.avg)} ms (min ${n(data.min)}, max ${n(data.max)}), jitter ${n(data.jitter)} ms, packet loss ${data.packetLoss ?? "?"}%` +
+      (data.latencyRequirement ? `, slice requirement: ${data.latencyRequirement}` : "");
+  }
+  return (
+    <div className={`text-xs rounded-lg px-3 py-2 break-words ${ok ? "bg-green-500/10 text-green-300" : "bg-red-500/10 text-red-300"}`}>
+      {text}
+    </div>
+  );
+}
+
 function CapabilityBadge({ available, label, note }) {
   return (
     <div className="flex items-center justify-between text-xs py-1.5 border-b border-slate-800 last:border-0">
@@ -98,6 +126,8 @@ const [capacityStatus, setCapacityStatus] = useState(null);
   const [sliceTopology, setSliceTopology] = useState(null);
   const [topologyLoading, setTopologyLoading] = useState(false);
   const [consoleLoading, setConsoleLoading] = useState({});
+  const [testResults, setTestResults] = useState({});
+  const [testRunning, setTestRunning] = useState({});
 
   const [form, setForm] = useState({
     name: "",
@@ -363,6 +393,26 @@ const [capacityStatus, setCapacityStatus] = useState(null);
     }
   }
 
+  async function runSliceTest(id, type) {
+    const key = `${id}:${type}`;
+    setTestRunning((p) => ({ ...p, [key]: true }));
+    try {
+      const body = type === "latency" ? {} : { duration: type === "priority" ? 8 : 5 };
+      const res = await fetch(`/api/slices/${id}/test-${type}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({ error: "Bad response from server" }));
+      const ok = res.ok && !data.error && data.success !== false;
+      setTestResults((p) => ({ ...p, [id]: { type, ok, data } }));
+    } catch (err) {
+      setTestResults((p) => ({ ...p, [id]: { type, ok: false, data: { error: err.message } } }));
+    } finally {
+      setTestRunning((p) => ({ ...p, [key]: false }));
+    }
+  }
+
   async function handleEnforceIsolation(id) {
     try {
       const res = await fetch(`/api/slices/${id}/enforce-isolation`, { method: "POST" });
@@ -548,6 +598,19 @@ const [capacityStatus, setCapacityStatus] = useState(null);
                 QoS: {slice.qos_status}
               </span>
             </div>
+            <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+              {["bandwidth", "latency", "priority"].map((t) => (
+                <button
+                  key={t}
+                  disabled={slice.status !== "ACTIVE" || testRunning[`${slice.id}:${t}`]}
+                  onClick={() => runSliceTest(slice.id, t)}
+                  className="text-xs rounded-lg border border-slate-700 px-3 py-2 hover:bg-slate-800 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {testRunning[`${slice.id}:${t}`] ? `Testing ${t}...` : `Test ${t}`}
+                </button>
+              ))}
+            </div>
+            <TestResult result={testResults[slice.id]} />
             <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => handleEditClick(slice)}

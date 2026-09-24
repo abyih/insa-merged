@@ -11,4 +11,12 @@ sdn-certs/
 *.crt
 *.srl
 *.jks
-*.p12
+*.p12node_modules/
+dist/
+*.bak*
+*.db
+users.db.empty
+.env
+certs/
+*.pem
+*.key

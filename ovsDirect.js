@@ -112,7 +112,7 @@ async function enforceMinBandwidthDirect(ovsInterfaceName, minRateKbps, maxRateK
   // Clear any existing QoS on this port first, so repeated calls (e.g. after
   // a slice's VM list or priority changes) don't leave orphaned queue
   // records behind on the port.
-  await runVsctl(`--if-exists clear port ${ovsInterfaceName} qos`);
+  await clearAndDestroyQos(ovsInterfaceName);
 
   const result = await runVsctl(
     `-- set port ${ovsInterfaceName} qos=@newqos ` +
@@ -143,7 +143,7 @@ async function enforceDualQueueDirect(ovsInterfaceName, minRateKbpsPriority, max
   const fastLaneKbps = Math.max(100, dscpFastLaneKbps ?? Math.round(maxRateKbps * 0.1));
   const fastLaneBps = fastLaneKbps * 1000;
 
-  await runVsctl(`--if-exists clear port ${ovsInterfaceName} qos`);
+  await clearAndDestroyQos(ovsInterfaceName);
 
   const qosResult = await runVsctl(
     `-- set port ${ovsInterfaceName} qos=@newqos ` +
@@ -177,7 +177,7 @@ async function enforceDualQueueDirect(ovsInterfaceName, minRateKbpsPriority, max
  * to OVN's linux-noop default (e.g. after br-int is rebuilt, a vswitchd
  * restart, or VM migration). Read-only - never modifies anything.
  */
-async function isQueueConfigured(ovsInterfaceName) {
+async function isQueueConfigured(ovsInterfaceName, expectedMaxKbps = null) {
   const qosLookup = await runVsctl(`--if-exists get port ${ovsInterfaceName} qos`);
   if (!qosLookup.success) return { configured: false, reason: "lookup-failed", error: qosLookup.error };
   const qosUuid = (qosLookup.stdout || "").replace(/"/g, "").trim();
@@ -185,6 +185,14 @@ async function isQueueConfigured(ovsInterfaceName) {
   const typeLookup = await runVsctl(`--if-exists get qos ${qosUuid} type`);
   const qosType = (typeLookup.stdout || "").replace(/"/g, "").trim();
   if (qosType !== "linux-htb") return { configured: false, reason: "wrong-qos-type", qosType };
+  if (expectedMaxKbps != null) {
+    const rateLookup = await runVsctl(`--if-exists get qos ${qosUuid} other_config:max-rate`);
+    const actualBps = parseInt((rateLookup.stdout || "").replace(/"/g, "").trim(), 10);
+    const expectedBps = Math.round(expectedMaxKbps * 1000);
+    if (actualBps !== expectedBps) {
+      return { configured: false, reason: `rate-mismatch (have ${actualBps} bps, want ${expectedBps} bps)`, qosUuid };
+    }
+  }
   return { configured: true, qosUuid };
 }
 
@@ -198,7 +206,7 @@ async function isQueueConfigured(ovsInterfaceName) {
  * in that case).
  */
 async function clearQueueDirect(ovsInterfaceName) {
-  const qosResult = await runVsctl(`--if-exists clear port ${ovsInterfaceName} qos`);
+  const qosResult = await clearAndDestroyQos(ovsInterfaceName);
   const tcResult = await runTc(`qdisc del dev ${ovsInterfaceName} root`);
   return {
     success: qosResult.success,
@@ -283,3 +291,30 @@ async function isPpsConfigured(ovsInterfaceName) {
 }
 
 export { enforceBandwidthDirect, enforceDualQueueDirect, pushDenyFlow, removeDenyFlow, dumpTable250, isQueueConfigured, clearQueueDirect, enforcePpsLimitDirect, clearPpsLimitDirect, isPpsConfigured };
+
+
+// Detaches a port's QoS and destroys the linux-htb QoS + Queue rows it owned.
+// Plain "clear port qos" only detaches; the rows stay in OVSDB forever.
+// OVN-owned records (external_ids mentions ovn) and non-htb types are left alone.
+async function clearAndDestroyQos(ovsInterfaceName) {
+  const lookup = await runVsctl(`--if-exists get port ${ovsInterfaceName} qos`);
+  const qosUuid = (lookup.stdout || "").replace(/"/g, "").trim();
+  let destroyable = false;
+  let queueUuids = [];
+  if (lookup.success && qosUuid && qosUuid !== "[]") {
+    const t = await runVsctl(`--if-exists get qos ${qosUuid} type`);
+    const ext = await runVsctl(`--if-exists get qos ${qosUuid} external_ids`);
+    destroyable = (t.stdout || "").replace(/"/g, "").trim() === "linux-htb" && !/ovn/i.test(ext.stdout || "");
+    if (destroyable) {
+      const q = await runVsctl(`--if-exists get qos ${qosUuid} queues`);
+      queueUuids = (q.stdout || "").match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) || [];
+    }
+  }
+  const cleared = await runVsctl(`--if-exists clear port ${ovsInterfaceName} qos`);
+  if (destroyable) {
+    await runVsctl(`--if-exists destroy qos ${qosUuid}`);
+    for (const q of queueUuids) await runVsctl(`--if-exists destroy queue ${q}`);
+  }
+  return cleared;
+}
+

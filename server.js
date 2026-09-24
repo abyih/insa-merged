@@ -4,6 +4,31 @@ import * as ovsDirect from "./ovsDirect.js";
 import * as llmProviders from "./llmProviders.js";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { execFile } from "node:child_process";
+const execFileP = promisify(execFile);
+
+const DENY_PRIORITY = 2000;
+
+async function ovnNb(args) {
+  return execFileP("sudo", ["-n", "ovn-nbctl", ...args]);
+}
+
+function buildDenyMatch(server, network, protocol, port) {
+  const ips = Object.values(server.addresses || {})
+    .flat()
+    .filter((a) => a.version === 4)
+    .map((a) => a.addr);
+  if (!ips.length) throw new Error("Source VM has no IPv4 address.");
+
+  const proto = normalizeProtocol(protocol);
+  let l4;
+  if (proto === "icmp") l4 = "icmp4";
+  else if (proto === "tcp" || proto === "udp")
+    l4 = `${proto} && ${proto}.dst == ${Number(port)}`;
+  else throw new Error(`Unsupported protocol: ${protocol}`);
+
+  return `ip4.src == {${ips.join(", ")}} && ip4.dst == ${network.cidr} && ${l4}`;
+}
 const execAsync = promisify(exec);
 dotenv.config();
 
@@ -18,7 +43,6 @@ process.on("uncaughtException", (err) => {
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
-import { execFile } from "child_process";
 import http from "http";
 import { Server } from "socket.io";
 import linkguardRouter, { startPolling, onosClient } from "./linkguard.js";
@@ -32,6 +56,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import multer from "multer";
+import { runOnVm, startIperfServer, parsePing, parseIperfJson, runViaJump } from "./vmSsh.js";
 
 const upload = multer({ dest: os.tmpdir() });
 
@@ -718,11 +743,19 @@ app.post("/api/openstack/security-groups/rules", async (req, res) => {
     });
   }
 
-  if (rule.action && rule.action.toUpperCase() !== "ALLOW") {
-    return res.status(400).json({
-      error: "OpenStack security groups only support ALLOW rules.",
-    });
+    if (rule.action && rule.action.toUpperCase() === "DENY") {
+    try {
+      const server = await findServerByName(rule.source);
+      const network = await findNetwork(rule.destination);
+      const match = buildDenyMatch(server, network, rule.protocol, rule.port);
+      const sw = `neutron-${network.id}`;
+      await ovnNb(["--may-exist", "acl-add", sw, "to-lport", String(DENY_PRIORITY), match, "drop"]);
+      return res.json({ ok: true, action: "DENY", switch: sw, match });
+    } catch (e) {
+      return res.status(500).json({ error: `DENY failed: ${e.message}` });
+    }
   }
+
 
   try {
     const server = await findServerByName(rule.source);
@@ -1544,6 +1577,31 @@ app.put("/api/slices/:id", async (req, res) => {
       req.params.id,
     );
 
+    // Apply an edited bandwidth (the form sends bandwidthMbps): save it and push it to the Neutron QoS rule
+    if (b.bandwidthMbps !== undefined && Number(b.bandwidthMbps) > 0) {
+      const newTotalMbps = Number(b.bandwidthMbps);
+      const newPerVmMbps = newTotalMbps / Math.max(1, newVmIds.length);
+      db.prepare(
+        "UPDATE slices SET allocated_mbps = ?, per_vm_mbps = ?, bandwidth_min = ?, bandwidth_max = ? WHERE id = ?"
+      ).run(newTotalMbps, newPerVmMbps, `${newTotalMbps} Mbps`, `${newTotalMbps} Mbps`, req.params.id);
+      if (existing.qos_policy_id && existing.bandwidth_limit_rule_id) {
+        try {
+          const editMaxKbps = Math.round(newPerVmMbps * 1000);
+          await osJson(
+            `${NEUTRON_URL}/qos/policies/${existing.qos_policy_id}/bandwidth_limit_rules/${existing.bandwidth_limit_rule_id}`,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ bandwidth_limit_rule: { max_kbps: editMaxKbps, max_burst_kbps: Math.round(editMaxKbps * 0.125) } }),
+            }
+          );
+          console.log(`Slice edit: updated Neutron cap to ${editMaxKbps} kbps`);
+        } catch (e) {
+          console.error("Slice edit: failed to update Neutron bandwidth rule:", e.message);
+        }
+      }
+    }
+
     // Attach any newly selected VMs to the slice's network, and detach removed VMs
     const targetNetworkId = b.networkId ?? existing.network_id;
     if (targetNetworkId && b.vmIds) {
@@ -1629,7 +1687,8 @@ app.put("/api/slices/:id", async (req, res) => {
     const needsFastLane = (b.latencyRequirement ?? existing.latency_requirement) === "LOW";
     if ((priorityFraction > 0 || needsFastLane) && newVmIds.length > 0) {
       try {
-        const perVm = existing.per_vm_mbps || parseFloat(String(existing.bandwidth_max).match(/[\d.]+/)?.[0] || "0");
+        const freshRow = db.prepare("SELECT per_vm_mbps, bandwidth_max FROM slices WHERE id = ?").get(req.params.id);
+        const perVm = freshRow.per_vm_mbps || parseFloat(String(freshRow.bandwidth_max).match(/[\d.]+/)?.[0] || "0");
         const maxKbps = Math.round(perVm * 1000);
         const fastLaneKbps = Math.round(maxKbps * priorityFraction);
         const standardMinKbps = Math.round(maxKbps * 0.1);
@@ -1774,22 +1833,57 @@ app.put("/api/slices/:id", async (req, res) => {
   }
 });
 
-app.post("/api/slices/:id/activate", (req, res) => {
+async function sliceShaperPorts(slice) {
+  const vmIds = JSON.parse(slice.vm_ids || "[]");
+  if (vmIds.length === 0) return [];
+  const portsData = await osJson(`${NEUTRON_URL}/ports`);
+  return (portsData.ports || [])
+    .filter((p) => vmIds.includes(p.device_id) && (!slice.network_id || p.network_id === slice.network_id))
+    .map((p) => `tap${p.id.slice(0, 11)}`);
+}
+
+async function clearSliceShapers(slice) {
+  try {
+    for (const iface of await sliceShaperPorts(slice)) await ovsDirect.clearQueueDirect(iface);
+  } catch (err) {
+    console.error("clearSliceShapers failed:", err.message);
+  }
+}
+
+async function applySliceShapers(slice) {
+  try {
+    const fraction = PRIORITY_MIN_BANDWIDTH_FRACTION[slice.priority || "MEDIUM"] ?? 0.5;
+    const needsFastLane = (slice.latency_requirement || "STANDARD") === "LOW";
+    if (fraction === 0 && !needsFastLane) return;
+    const perVm = slice.per_vm_mbps || parseFloat(String(slice.bandwidth_max).match(/[\d.]+/)?.[0] || "0");
+    const maxKbps = Math.round(perVm * 1000);
+    if (maxKbps <= 0) return;
+    for (const iface of await sliceShaperPorts(slice)) {
+      await ovsDirect.enforceDualQueueDirect(iface, Math.round(maxKbps * 0.1), maxKbps, Math.round(maxKbps * fraction));
+    }
+  } catch (err) {
+    console.error("applySliceShapers failed:", err.message);
+  }
+}
+
+app.post("/api/slices/:id/activate", async (req, res) => {
   try {
     db.prepare("UPDATE slices SET status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(req.params.id);
     const row = db.prepare("SELECT * FROM slices WHERE id = ?").get(req.params.id);
     if (!row) return res.status(404).json({ error: "Slice not found" });
+    await applySliceShapers(row);
     res.json({ slice: rowToSlice(row) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post("/api/slices/:id/deactivate", (req, res) => {
+app.post("/api/slices/:id/deactivate", async (req, res) => {
   try {
     db.prepare("UPDATE slices SET status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(req.params.id);
     const row = db.prepare("SELECT * FROM slices WHERE id = ?").get(req.params.id);
     if (!row) return res.status(404).json({ error: "Slice not found" });
+    await clearSliceShapers(row);
     res.json({ slice: rowToSlice(row) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1817,7 +1911,7 @@ app.delete("/api/slices/:id", async (req, res) => {
         const servers = (serversData.servers || []).filter((s) => vmIdsForCleanup.includes(s.id));
         const ports = portsData.ports || [];
         for (const server of servers) {
-          const port = ports.find((p) => p.device_id === server.id);
+          const port = ports.find((p) => p.device_id === server.id && (!slice.network_id || p.network_id === slice.network_id));
           if (!port) continue;
           const ifaceName = `tap${port.id.slice(0, 11)}`;
           await ovsDirect.clearQueueDirect(ifaceName);
@@ -2470,6 +2564,173 @@ app.get("/api/slices/:id/topology", async (req, res) => {
   }
 });
 
+
+/* ══════════════════════════════════════════════════════════════════
+   SLICE TESTING — Latency, Bandwidth Cap, and Priority
+   Runs real ping/iperf3 tests inside OpenStack VMs over SSH.
+   ══════════════════════════════════════════════════════════════════ */
+
+async function getSliceVmNetworkInfo(vmIds, networkId = null) {
+  const [portsData, floatingData] = await Promise.all([
+    osJson(`${NEUTRON_URL}/ports`),
+    osJson(`${NEUTRON_URL}/floatingips`),
+  ]);
+  const allPorts = (portsData.ports || []).filter((p) => vmIds.includes(p.device_id));
+  const floatingips = floatingData.floatingips || [];
+
+  return vmIds.map((vmId) => {
+    const vmPorts = allPorts.filter((p) => p.device_id === vmId);
+    // Internal IP comes from the port on the slice network; the floating IP
+    // (used only to SSH in) may be attached to any of the VM's ports.
+    const slicePort = (networkId && vmPorts.find((p) => p.network_id === networkId)) || vmPorts[0];
+    const fixedIp = slicePort?.fixed_ips?.[0]?.ip_address || null;
+    const fip = floatingips.find((f) => vmPorts.some((p) => p.id === f.port_id));
+    return {
+      vmId,
+      fixedIp,
+      floatingIp: fip?.floating_ip_address || null,
+    };
+  });
+}
+
+function parseBandwidthCapMbps(slice) {
+  // bandwidth_max is stored as free-form text (e.g. "50", "50 Mbps", "50M")
+  if (!slice.bandwidth_max) return null;
+  const match = String(slice.bandwidth_max).match(/[\d.]+/);
+  return match ? parseFloat(match[0]) : null;
+}
+
+app.post("/api/slices/:id/test-latency", async (req, res) => {
+  try {
+    const slice = db.prepare("SELECT * FROM slices WHERE id = ?").get(req.params.id);
+    if (!slice) return res.status(404).json({ error: "Slice not found" });
+    const vmIds = JSON.parse(slice.vm_ids || "[]");
+    if (vmIds.length < 2) {
+      return res.status(400).json({ error: "Slice needs at least 2 VMs for a latency test" });
+    }
+
+    const vmInfo = await getSliceVmNetworkInfo(vmIds, slice.network_id);
+    const [vmA, vmB] = vmInfo;
+    if (!vmA.floatingIp) return res.status(400).json({ error: `VM ${vmA.vmId} has no floating IP to SSH into` });
+    if (!vmB.fixedIp) return res.status(400).json({ error: `VM ${vmB.vmId} has no internal IP to ping` });
+
+    const count = req.body?.count || 10;
+    const { stdout } = await runOnVm(vmA.floatingIp, `ping -c ${count} ${vmB.fixedIp}`);
+    const result = parsePing(stdout);
+
+    res.json({
+      sliceId: slice.id,
+      sliceName: slice.name,
+      test: "latency",
+      srcVm: vmA.vmId,
+      dstVm: vmB.vmId,
+      dstIp: vmB.fixedIp,
+      latencyRequirement: slice.latency_requirement || null,
+      ...result,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, test: "latency" });
+  }
+});
+
+app.post("/api/slices/:id/test-bandwidth", async (req, res) => {
+  try {
+    const slice = db.prepare("SELECT * FROM slices WHERE id = ?").get(req.params.id);
+    if (!slice) return res.status(404).json({ error: "Slice not found" });
+    const vmIds = JSON.parse(slice.vm_ids || "[]");
+    if (vmIds.length < 2) {
+      return res.status(400).json({ error: "Slice needs at least 2 VMs for a bandwidth test" });
+    }
+
+    const vmInfo = await getSliceVmNetworkInfo(vmIds, slice.network_id);
+    const [vmA, vmB] = vmInfo;
+    if (!vmA.floatingIp) return res.status(400).json({ error: `VM ${vmA.vmId} has no floating IP to SSH into` });
+    if (!vmB.fixedIp) return res.status(400).json({ error: `VM ${vmB.vmId} has no internal IP` });
+
+    await runViaJump(vmA.floatingIp, vmB.fixedIp, "pkill iperf3 2>/dev/null; iperf3 -s -D -1").catch(() => {});
+    await new Promise((r) => setTimeout(r, 1000)); // let the server bind
+
+    const duration = req.body?.duration || 5;
+    const { stdout } = await runOnVm(vmA.floatingIp, `iperf3 -c ${vmB.fixedIp} -t ${duration} -J`, { timeoutMs: (duration + 10) * 1000 });
+    const result = parseIperfJson(stdout);
+    const capMbps = parseBandwidthCapMbps(slice);
+    const withinCap = result.success && capMbps != null ? result.mbps <= capMbps * 1.1 : null;
+    const perVmMbps = slice.per_vm_mbps || null;
+    const underDelivering = result.success && perVmMbps != null ? result.mbps < perVmMbps * 0.5 : null;
+
+    res.json({
+      sliceId: slice.id,
+      sliceName: slice.name,
+      test: "bandwidth",
+      srcVm: vmA.vmId,
+      dstVm: vmB.vmId,
+      capMbps,
+      withinCap,
+      perVmMbps,
+      underDelivering,
+      ...result,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, test: "bandwidth" });
+  }
+});
+
+app.post("/api/slices/:id/test-priority", async (req, res) => {
+  try {
+    const slice = db.prepare("SELECT * FROM slices WHERE id = ?").get(req.params.id);
+    if (!slice) return res.status(404).json({ error: "Slice not found" });
+    const vmIds = JSON.parse(slice.vm_ids || "[]");
+    if (vmIds.length < 2) {
+      return res.status(400).json({ error: "Slice needs at least 2 VMs for a priority test" });
+    }
+
+    const [src, dst] = await getSliceVmNetworkInfo(vmIds, slice.network_id);
+    if (!src.floatingIp) return res.status(400).json({ error: `VM ${src.vmId} has no floating IP to SSH into` });
+    if (!dst.fixedIp) return res.status(400).json({ error: `VM ${dst.vmId} has no internal IP` });
+
+    // Two iperf3 servers on separate ports, started by ONE command so a
+    // second pkill can never kill the first server.
+    await runViaJump(
+      src.floatingIp,
+      dst.fixedIp,
+      "pkill iperf3 2>/dev/null; iperf3 -s -D -1 -p 5201; iperf3 -s -D -1 -p 5202"
+    ).catch(() => {});
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Both flows cross the SAME shaped port (the destination VM's tap on the
+    // slice network): one marked DSCP 46 (fast-lane class 1:2), one unmarked
+    // (default class 1:1).
+    const duration = req.body?.duration || 8;
+    const opts = { timeoutMs: (duration + 10) * 1000 };
+    const [resMarked, resPlain] = await Promise.all([
+      runOnVm(src.floatingIp, `iperf3 -c ${dst.fixedIp} -p 5201 -t ${duration} -J -S 0xb8`, opts),
+      runOnVm(src.floatingIp, `iperf3 -c ${dst.fixedIp} -p 5202 -t ${duration} -J`, opts),
+    ]);
+    const marked = parseIperfJson(resMarked.stdout);
+    const plain = parseIperfJson(resPlain.stdout);
+    const brief = (r) => (r.success ? { success: true, mbps: r.mbps } : { success: false, mbps: r.mbps ?? null, raw: r.raw });
+
+    const bothOk = marked.success && plain.success;
+    const total = bothOk ? marked.mbps + plain.mbps : null;
+    res.json({
+      test: "priority",
+      sliceId: slice.id,
+      sliceName: slice.name,
+      priority: slice.priority,
+      perVmMbps: slice.per_vm_mbps || null,
+      fastLaneFraction: PRIORITY_MIN_BANDWIDTH_FRACTION[slice.priority || "MEDIUM"] ?? 0.5,
+      srcVm: src.vmId,
+      dstVm: dst.vmId,
+      dscp46: brief(marked),
+      unmarked: brief(plain),
+      totalMbps: total,
+      dscp46Share: total ? marked.mbps / total : null,
+      fastLaneWon: bothOk ? marked.mbps > plain.mbps : null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, test: "priority" });
+  }
+});
 app.get("/api/openstack/odl-sync-status", async (req, res) => {
   try {
     const nodeId = await odlSync.findBrIntNodeId();
@@ -3467,11 +3728,11 @@ async function reconcileSlicePersistence() {
       for (const vmId of vmIds) {
         const server = servers.find((s) => s.id === vmId);
         if (!server) continue;
-        const port = ports.find((p) => p.device_id === server.id);
+        const port = ports.find((p) => p.device_id === server.id && (!slice.network_id || p.network_id === slice.network_id));
         if (!port) continue;
         const ifaceName = `tap${port.id.slice(0, 11)}`;
 
-        const status = await ovsDirect.isQueueConfigured(ifaceName);
+        const status = await ovsDirect.isQueueConfigured(ifaceName, maxKbps);
         if (status.configured) continue; // already correct, don't touch it
 
         console.warn(
