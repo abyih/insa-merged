@@ -186,7 +186,6 @@ function Header() {
     { label: "Security", icon: <Shield className="w-4 h-4" />, isDropdown: true, type: "security" },
     { label: "Slicing", icon: <Layers className="w-4 h-4" />, isDropdown: true, type: "slicing" },
     { label: "Cloud", icon: <Cloud className="w-4 h-4" />, to: "/cloud" },
-    { label: "VM Map", icon: <Network className="w-4 h-4" />, to: "/vm-topology" },
     { label: "Stats", icon: <Activity className="w-4 h-4" />, to: "/stats" },
     { label: "Users", icon: <UsersIcon className="w-4 h-4" />, to: "/users" },
     { label: "Tools", icon: <Wrench className="w-4 h-4" />, to: "/api-tester" },

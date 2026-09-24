@@ -20,7 +20,6 @@ import Cloud from "./Pages/Cloud";
 import NetworkSlicing from "./Pages/NetworkSlicing";
 import SlicingVerification from "./Pages/SlicingVerification";
 import NetworkSlices from "./Pages/NetworkSlices";
-import VmTopologyMap from "./Pages/VmTopologyMap";
 import SecurityHub from "./Pages/Security/SecurityHub";
 import SlicingHub from "./Pages/Slicing/SlicingHub";
 import { NotificationProvider } from "./context/NotificationContext";
@@ -368,7 +367,6 @@ const App = () => (
               <Route path="/stats"               element={<ProtectedRoute><Stats /></ProtectedRoute>} />
               <Route path="/topology"            element={<ProtectedRoute><TopologyRoute /></ProtectedRoute>} />
               <Route path="/cloud"               element={<ProtectedRoute><Cloud /></ProtectedRoute>} />
-              <Route path="/vm-topology"         element={<ProtectedRoute><VmTopologyMap /></ProtectedRoute>} />
               
               {/* Slicing Suite Routes */}
               <Route path="/slicing"              element={<ProtectedRoute><SlicingHub defaultTab="overview" /></ProtectedRoute>} />
