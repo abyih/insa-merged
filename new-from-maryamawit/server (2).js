@@ -183,6 +183,15 @@ const allowedOrigins = ["http://localhost:5173", "http://localhost:5174"];
 const io = new Server(server, {
   cors: { origin: allowedOrigins, credentials: true },
 });
+
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: "GET,POST,PUT,DELETE",
+    allowedHeaders: "Content-Type, Authorization",
+    credentials: true,
+  })
+);
 app.set("io", io);
 
 const port = process.env.PORT || 5000;
@@ -867,85 +876,39 @@ app.get("/api/openstack/vm-topology-map", async (req, res) => {
       (p) => p.device_owner === "compute:nova",
     );
 
-    // Detect if ONOS or ODL is the active controller
-    let controllerType = "odl";
-    let onosDevices = [];
-    try {
-      const onosRes = await fetch("http://localhost:8181/onos/v1/devices", {
-        headers: {
-          Authorization: "Basic " + Buffer.from("onos:rocks").toString("base64"),
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(2000),
-      });
-      if (onosRes.ok) {
-        const onosData = await onosRes.json();
-        onosDevices = onosData.devices || [];
-        controllerType = "onos";
-      }
-    } catch {}
-
+    // Pull ODL's live node-connector list for br-int so we can match tap<id> names
     let odlConnectors = [];
     let brIntNodeId = null;
-
-    if (controllerType === "onos") {
-      // Find OVSDB controller/device in ONOS (e.g. ovsdb:172.17.0.1)
-      const ovsdbDev = onosDevices.find(
-        (d) => (d.id?.includes("ovsdb") || d.type === "CONTROLLER") && d.available,
-      );
-      brIntNodeId = ovsdbDev ? `${ovsdbDev.id}/bridge/br-int` : "ovsdb:172.17.0.1/bridge/br-int";
-    } else {
-      // Pull ODL's live node-connector list for br-int so we can match tap<id> names
-      try {
-        brIntNodeId = await odlSync.findBrIntNodeId();
-        const odlRes = await fetch(
-          `${odlSync.__ODL_BASE || "http://localhost:8181"}/rests/data/opendaylight-inventory:nodes/node=${encodeURIComponent(
-            brIntNodeId,
-          )}?content=nonconfig`,
-          {
-            headers: {
-              Authorization: "Basic " + Buffer.from("admin:admin").toString("base64"),
-              Accept: "application/json",
-            },
-            signal: AbortSignal.timeout(2500),
+    try {
+      brIntNodeId = await odlSync.findBrIntNodeId();
+      const odlRes = await fetch(
+        `${odlSync.__ODL_BASE || "http://localhost:8181"}/rests/data/opendaylight-inventory:nodes/node=${encodeURIComponent(
+          brIntNodeId,
+        )}?content=nonconfig`,
+        {
+          headers: {
+            Authorization: "Basic " + Buffer.from("admin:admin").toString("base64"),
+            Accept: "application/json",
           },
-        );
-        if (odlRes.ok) {
-          const odlData = await odlRes.json();
-          const node = odlData["opendaylight-inventory:node"]?.[0];
-          odlConnectors = node?.["node-connector"] || [];
-        }
-      } catch (odlErr) {
-        console.error("ODL topology fetch (non-fatal):", odlErr.message);
+        },
+      );
+      if (odlRes.ok) {
+        const odlData = await odlRes.json();
+        const node = odlData["opendaylight-inventory:node"]?.[0];
+        odlConnectors = node?.["node-connector"] || [];
       }
+    } catch (odlErr) {
+      console.error("ODL topology fetch (non-fatal):", odlErr.message);
     }
 
     const mapping = servers.map((server) => {
       const port = ports.find((p) => p.device_id === server.id);
       const tapName = port ? `tap${port.id.slice(0, 11)}` : null;
-
-      let connectorId = null;
-      let isVisible = false;
-
-      if (controllerType === "onos") {
-        // In ONOS: DevStack OVS host is connected via OVSDB, VM is active with TAP bound to br-int
-        const isBoundToBrInt =
-          port?.binding_vif_details?.bridge_name === "br-int" ||
-          port?.["binding:vif_details"]?.bridge_name === "br-int" ||
-          port?.status === "ACTIVE";
-        isVisible = server.status === "ACTIVE" && !!tapName && isBoundToBrInt;
-        connectorId = isVisible ? `${brIntNodeId}/${tapName}` : null;
-      } else {
-        // In ODL: Match tap interface name in ODL inventory
-        const connector = tapName
-          ? odlConnectors.find(
-              (nc) => nc["flow-node-inventory:name"] === tapName,
-            )
-          : null;
-        connectorId = connector?.id || null;
-        isVisible = !!connector;
-      }
-
+      const connector = tapName
+        ? odlConnectors.find(
+            (nc) => nc["flow-node-inventory:name"] === tapName,
+          )
+        : null;
       return {
         vmId: server.id,
         vmName: server.name,
@@ -954,20 +917,12 @@ app.get("/api/openstack/vm-topology-map", async (req, res) => {
         macAddress: port?.mac_address || null,
         ipAddress: port?.fixed_ips?.[0]?.ip_address || null,
         ovsInterface: tapName,
-        controllerNodeConnectorId: connectorId,
-        controllerVisible: isVisible,
-        // Backward compatibility
-        odlNodeConnectorId: connectorId,
-        odlVisible: isVisible,
+        odlNodeConnectorId: connector?.id || null,
+        odlVisible: !!connector,
       };
     });
 
-    res.json({
-      controllerType,
-      controllerName: controllerType === "onos" ? "ONOS" : "OpenDaylight",
-      brIntNodeId,
-      mapping,
-    });
+    res.json({ brIntNodeId, mapping });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3056,6 +3011,162 @@ app.post("/api/glance/images/:id/refresh", async (req, res) => {
   }
 });
 
+/* ==============================================================================
+   OPTION A: DYNAMIC NORTHBOUND CONTROLLER URL RESOLVER
+   ============================================================================== */
+let isNorthboundTlsActive = { onos: false, odl: false };
+
+export function getControllerEndpoint(controller = "onos") {
+  const target = controller.toLowerCase();
+  const isHttps = Boolean(isNorthboundTlsActive[target]);
+  const protocol = isHttps ? "https" : "http";
+
+  if (target === "odl") {
+    const port = isHttps ? 8443 : 8181;
+    return `${protocol}://127.0.0.1:${port}/rests`;
+  }
+
+  // Option A: Targets container bridge IP 172.17.0.2 on port 8443 when HTTPS is active
+  const hostAndPort = isHttps ? "172.17.0.2:8443" : "127.0.0.1:8181";
+  return `${protocol}://${hostAndPort}/onos/v1`;
+}
+
+/* ==========================================
+   SDN TLS CONFIGURATION ROUTING
+   ========================================== */
+// app.get(["/api/tls/status", "/api/openstack/tls/status"], async (req, res) => {
+//   const controller = (req.query.controller || "").toLowerCase();
+//   if (controller === "onos") {
+//     const containerName = process.env.ONOS_CONTAINER_NAME || "onos";
+//     return execFile("docker", ["exec", containerName, "ps", "aux"], (error, stdout) => {
+//       const isRunning = !error && stdout && stdout.includes("onos");
+//       return res.json({
+//         controller: "onos",
+//         isEnabled: true,
+//         northbound: true,
+//         southbound: true,
+//         details: isRunning ? "ONOS container active with TLS listeners" : "ONOS container running"
+//       });
+//     });
+//   } else if (controller === "odl") {
+//     try {
+//       const authHeader = "Basic " + Buffer.from("admin:admin").toString("base64");
+//       const restconfRes = await fetch(
+//         "http://127.0.0.1:8181/rests/data/openflow-switch-connection-config:switch-connection-config=openflow-switch-connection-provider-default-impl",
+//         {
+//           headers: { Authorization: authHeader, Accept: "application/json" },
+//           signal: AbortSignal.timeout(2000),
+//         }
+//       ).catch(() => null);
+
+//       if (restconfRes && restconfRes.ok) {
+//         const payload = await restconfRes.json();
+//         const provider = payload["openflow-switch-connection-config:switch-connection-config"]?.[0];
+//         const isEnabled = provider?.["transport-protocol"] === "TLS";
+//         return res.json({ controller: "odl", isEnabled, northbound: isEnabled, southbound: isEnabled });
+//       }
+//     } catch (_) {}
+//     return res.json({ controller: "odl", isEnabled: false, northbound: false, southbound: false });
+//   }
+
+//   // Default fallback for legacy callers without ?controller=
+//   const status = { northbound: false, southbound: false, eastwest: false };
+//   try {
+//     const cfg = fs.readFileSync(PAX_WEB_CFG_PATH, "utf8");
+//     status.northbound = /^org\.osgi\.service\.http\.secure\.enabled\s*=\s*true/m.test(cfg);
+//   } catch (err) {
+//     console.error("Failed to read pax web cfg:", err.message);
+//   }
+
+//   try {
+//     const sw = await odlRequest(
+//       "/rests/data/openflow-switch-connection-config:switch-connection-config=openflow-switch-connection-provider-default-impl"
+//     );
+//     const entry = sw["openflow-switch-connection-config:switch-connection-config"]?.[0];
+//     status.southbound = entry?.["transport-protocol"] === "TLS";
+//   } catch (err) {
+//     console.error("Failed to read ODL switch-connection-config:", err.message);
+//   }
+
+//   res.json(status);
+// });
+
+// app.post(["/api/tls/toggle", "/api/openstack/tls/toggle"], async (req, res) => {
+//   const { controller = "onos", enable, channel } = req.body;
+//   if (typeof enable !== "boolean") {
+//     return res.status(400).json({ error: "Boolean parameter 'enable' is required." });
+//   }
+//   return res.json({
+//     success: true,
+//     controller,
+//     channel: channel || "both",
+//     enabled: enable,
+//     message: `TLS ${enable ? "ENABLED" : "DISABLED"} for ${controller.toUpperCase()} (${channel || "all channels"}).`,
+//   });
+// });
+
+// app.post("/api/tls/northbound", async (req, res) => {
+//   const { enabled } = req.body;
+//   try {
+//     let cfg = fs.readFileSync(PAX_WEB_CFG_PATH, "utf8");
+//     if (/^org\.osgi\.service\.http\.secure\.enabled\s*=.*/m.test(cfg)) {
+//       cfg = cfg.replace(
+//         /^org\.osgi\.service\.http\.secure\.enabled\s*=.*/m,
+//         `org.osgi.service.http.secure.enabled = ${enabled}`
+//       );
+//     } else {
+//       cfg += `\norg.osgi.service.http.secure.enabled = ${enabled}\n`;
+//     }
+//     fs.writeFileSync(PAX_WEB_CFG_PATH, cfg);
+//     res.json({
+//       success: true,
+//       message: `Northbound TLS ${enabled ? "enabled" : "disabled"}. Karaf watches config files and usually applies this within ~10 seconds; a manual restart guarantees it.`,
+//     });
+//   } catch (err) {
+//     console.error("Failed to update pax web cfg:", err.message);
+//     res.status(500).json({ error: err.message || "Failed to update northbound TLS config" });
+//   }
+// });
+
+app.post("/api/tls/southbound", async (req, res) => {
+  const { enabled } = req.body;
+  try {
+    await odlRequest(
+      "/rests/data/openflow-switch-connection-config:switch-connection-config=openflow-switch-connection-provider-default-impl",
+      "PUT",
+      {
+        "openflow-switch-connection-config:switch-connection-config": [
+          {
+            "instance-name": "openflow-switch-connection-provider-default-impl",
+            port: 6653,
+            "transport-protocol": enabled ? "TLS" : "TCP",
+            "group-add-mod-enabled": false,
+            "channel-outbound-queue-size": 1024,
+            tls: {
+              keystore: "configuration/ssl/ctl.jks",
+              "keystore-type": "JKS",
+              "keystore-path-type": "PATH",
+              "keystore-password": "opendaylight",
+              truststore: "configuration/ssl/truststore.jks",
+              "truststore-type": "JKS",
+              "truststore-path-type": "PATH",
+              "truststore-password": "opendaylight",
+              "certificate-password": "opendaylight",
+              "cipher-suites": ["TLS_RSA_WITH_AES_128_CBC_SHA"],
+            },
+          },
+        ],
+      }
+    );
+    res.json({
+      success: true,
+      message: `Southbound TLS ${enabled ? "enabled" : "disabled"} on port 6653. Note: switches must connect via ssl:// on this port to use it; Mininet defaults to plain tcp:// on port 6633.`,
+    });
+  } catch (err) {
+    console.error("Failed to update ODL switch-connection-config:", err.message);
+    res.status(500).json({ error: err.message || "Failed to update southbound TLS config" });
+  }
+});
 
 app.delete(["/api/openstack/vms/:id", "/api/openstack/delete-vm/:id"], async (req, res) => {
   const { id } = req.params;
@@ -3210,6 +3321,115 @@ async function resolveKeystoneUrl() {
 }
 
 /* ==========================================
+   SDN TLS CONFIGURATION ROUTES (ODL & ONOS)
+   ========================================== */
+
+// app.get(["/api/tls/status", "/api/openstack/tls/status"], async (req, res) => {
+//   const { controller } = req.query;
+//   if (!controller) {
+//     return res.status(400).json({ error: "Controller parameter is required (odl or onos)." });
+//   }
+
+//   const target = controller.toLowerCase();
+
+//   try {
+//     if (target === "odl") {
+//       const vmUser = process.env.VM_USER || os.userInfo().username;
+//       const rawEtcPath = process.env.ODL_ETC_PATH || `/home/${vmUser}/karaf-0.23.0/etc`;
+//       const odlEtcPath = resolvePortablePath(rawEtcPath);
+//       const ofPluginPath = path.join(odlEtcPath, "org.opendaylight.openflowplugin.cfg");
+
+//       if (fs.existsSync(ofPluginPath)) {
+//         const content = fs.readFileSync(ofPluginPath, "utf8");
+//         const isEnabled =
+//           content.includes("use-transport-tls=true") || content.includes("transport-protocol=TLS");
+//         return res.json({ isEnabled });
+//       }
+//       return res.json({ isEnabled: false });
+//     } else if (target === "onos") {
+//       const containerName = process.env.ONOS_CONTAINER_NAME || "onos-2.7";
+//       const internalEtc = process.env.ONOS_INTERNAL_ETC || "/root/onos/apache-karaf-4.2.9/etc";
+//       const ofFileName = "org.onosproject.openflow.controller.impl.OpenFlowControllerImpl.cfg";
+//       const logFile = path.posix.join(internalEtc, "..", "data", "log", "karaf.log");
+
+//       // Prefer the mode ONOS is really running in (last TlsParams line in karaf.log)
+//       const logCmd = `docker exec ${containerName} sh -c "grep -o 'TlsParams{tlsMode=[a-z]*' ${logFile} | tail -1"`;
+//       exec(logCmd, (logErr, logOut) => {
+//         const m = (logOut || "").match(/tlsMode=(\w+)/);
+//         if (!logErr && m) {
+//           return res.json({ isEnabled: m[1] !== "disabled" });
+//         }
+//         // Fallback: read the cfg file
+//         const checkCommand = `docker exec ${containerName} cat ${internalEtc}/${ofFileName}`;
+//         exec(checkCommand, (error, stdout) => {
+//           if (error || !stdout) return res.json({ isEnabled: false });
+//           return res.json({ isEnabled: /tlsMode\s*=\s*(strict|enabled)/.test(stdout) });
+//         });
+//       });
+//     } else {
+//       return res.status(400).json({ error: "Unsupported controller. Choose 'odl' or 'onos'." });
+//     }
+//   } catch (error) {
+//     res.status(500).json({ error: "Failed to read configuration status.", details: error.message });
+//   }
+// });
+
+// // ONOS can take 2-3 minutes (container restart), which browsers/proxies drop as a
+// // "Network Error". So ONOS toggles run as a background job the UI polls for the result.
+// const tlsJobs = {}; // controller -> { state: "running"|"done"|"error", enable, message, startedAt }
+
+// app.post(["/api/tls/toggle", "/api/openstack/tls/toggle"], async (req, res) => {
+//   const { controller, enable } = req.body;
+//   if (!controller || typeof enable !== "boolean") {
+//     return res
+//       .status(400)
+//       .json({ error: "Invalid request. 'controller' and boolean 'enable' required." });
+//   }
+
+//   const target = controller.toLowerCase();
+
+//   try {
+//     if (target === "odl") {
+//       await updateOdlTlsConfig(enable);
+//       return res.json({
+//         success: true,
+//         message: `ODL Southbound TLS is now ${enable ? "ENABLED" : "DISABLED"}`,
+//       });
+//     } else if (target === "onos") {
+//       if (tlsJobs.onos?.state === "running") {
+//         return res.status(202).json({ success: true, pending: true, message: "ONOS update already running." });
+//       }
+//       tlsJobs.onos = { state: "running", enable, message: "", startedAt: Date.now() };
+//       updateOnosTlsConfig(enable)
+//         .then(() => {
+//           tlsJobs.onos = {
+//             ...tlsJobs.onos,
+//             state: "done",
+//             message: `ONOS Southbound TLS is now ${enable ? "ENABLED (Strict)" : "DISABLED"}`,
+//           };
+//         })
+//         .catch((err) => {
+//           console.error("[TLS Toggle Error]", err.message);
+//           tlsJobs.onos = { ...tlsJobs.onos, state: "error", message: err.message };
+//         });
+//       return res.status(202).json({ success: true, pending: true });
+//     } else {
+//       return res.status(400).json({ error: "TLS orchestration is only supported for ODL or ONOS." });
+//     }
+//   } catch (error) {
+//     console.error("[TLS Toggle Error]", error.message);
+//     res
+//       .status(500)
+//       .json({ error: "Failed to update controller configuration.", details: error.message });
+//   }
+// });
+
+// app.get("/api/tls/job", (req, res) => {
+//   const target = String(req.query.controller || "").toLowerCase();
+//   res.json(tlsJobs[target] || { state: "idle" });
+// });
+
+/* ==========================================
    SDN TLS CONFIGURATION ROUTES (NORTHBOUND & SOUTHBOUND)
    ========================================== */
 
@@ -3256,6 +3476,7 @@ app.get(["/api/tls/status", "/api/openstack/tls/status"], async (req, res) => {
           content.includes("use-transport-tls=true") || content.includes("transport-protocol=TLS");
       }
 
+
       return res.json({
         controller: "odl",
         isEnabled: isSouthbound,
@@ -3269,9 +3490,8 @@ app.get(["/api/tls/status", "/api/openstack/tls/status"], async (req, res) => {
   }
 });
 
-// ONOS can take 2-3 minutes (container restart), which browsers/proxies drop as a
-// "Network Error". So ONOS toggles run as a background job the UI polls for the result.
 const tlsJobs = {};
+
 
 // Unified Toggle Route (Handles both Northbound and Southbound)
 app.post(["/api/tls/toggle", "/api/openstack/tls/toggle"], async (req, res) => {

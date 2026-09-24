@@ -115,7 +115,13 @@ export async function getNodes() {
 			]);
 
 			const rawDevices = devRes.data?.devices || [];
-			const devices = rawDevices.filter((d) => d.available === true || d.available === "true");
+			const devices = rawDevices.filter(
+				(d) =>
+					(d.available === true || d.available === "true") &&
+					(d.type === "SWITCH" || (d.id && d.id.startsWith("of:"))) &&
+					!(d.id && d.id.startsWith("ovsdb:")) &&
+					d.type !== "CONTROLLER"
+			);
 			const flows = flowsRes.data?.flows || [];
 
 			// Fetch ports for each device in parallel

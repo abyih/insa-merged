@@ -12,7 +12,10 @@ import {
   Clock,
   Activity,
   FileCode,
-  X
+  X,
+  Shield,
+  Lock,
+  Eye,
 } from "lucide-react";
 import {
   getInventoryNodes,
@@ -199,6 +202,27 @@ export default function Flows() {
   const [editingFlow, setEditingFlow] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
 
+  const activeNodeObj = useMemo(() => {
+    return nodes.find((candidate) => candidate.id === selectedNode || candidate["id"] === selectedNode);
+  }, [nodes, selectedNode]);
+
+  const selectedNodeLabel = useMemo(() => {
+    return activeNodeObj?.id || activeNodeObj?.["id"] || selectedNode;
+  }, [activeNodeObj, selectedNode]);
+
+  const isReadOnlyNode = useMemo(() => {
+    if (!activeNodeObj) return false;
+    return (
+      Boolean(activeNodeObj.isReadOnly) ||
+      Boolean(activeNodeObj.isDevStack) ||
+      String(activeNodeObj.type || "").includes("Observer") ||
+      String(activeNodeObj.type || "").includes("Bridge") ||
+      String(activeNodeObj.id || "").includes("ovsdb") ||
+      String(activeNodeObj.id || "").includes("br-int") ||
+      String(activeNodeObj.id || "").includes("br-ex")
+    );
+  }, [activeNodeObj]);
+
   // 1. Load Inventory Nodes
   useEffect(() => {
     let mounted = true;
@@ -326,13 +350,20 @@ export default function Flows() {
 
   // Modal Handlers
   const openCreateModal = () => {
+    if (isReadOnlyNode) {
+      setMessage(`Device '${selectedNodeLabel}' operates in Observer Mode (managed by OpenStack OVN). Flow creation is disabled.`);
+      return;
+    }
     setEditingFlow(null);
     setFormData({ ...emptyForm, flowId: `flow-${Date.now().toString().slice(-4)}` });
     setIsModalOpen(true);
   };
 
   const openEditModal = (flow) => {
-    setEditingFlow(flow);
+    if (isReadOnlyNode) {
+      setMessage(`Device '${selectedNodeLabel}' operates in Observer Mode (managed by OpenStack OVN). Flow editing is disabled.`);
+      return;
+    }
     const ethMatch = flow.raw?.match?.["ethernet-match"]?.["ethernet-type"]?.type;
     const instructionList = flow.raw?.instructions?.instruction || [];
     const firstInstruction = instructionList[0] || {};
@@ -363,6 +394,10 @@ export default function Flows() {
   };
 
   const handleDelete = async (flow) => {
+    if (isReadOnlyNode) {
+      setMessage(`Device '${selectedNodeLabel}' operates in Observer Mode (managed by OpenStack OVN). Flow deletion is disabled.`);
+      return;
+    }
     if (!window.confirm(`Delete flow rule '${flow.id}' from switch ${selectedNode}?`)) return;
     try {
       setMessage(`Deleting flow rule ${flow.id}…`);
@@ -421,6 +456,10 @@ export default function Flows() {
 
   const handleSubmit = async (event) => {
     if (event?.preventDefault) event.preventDefault();
+    if (isReadOnlyNode) {
+      alert(`Device '${selectedNodeLabel}' operates in Observer Mode (managed by OpenStack OVN). Direct flow injection is disabled.`);
+      return;
+    }
     if (!formData.flowId) {
       alert("Please provide a Flow ID.");
       return;
@@ -450,11 +489,6 @@ export default function Flows() {
     }
   }, [buildOdlPayload]);
 
-  const selectedNodeLabel = useMemo(() => {
-    const node = nodes.find((candidate) => candidate.id === selectedNode || candidate["id"] === selectedNode);
-    return node?.id || node?.["id"] || selectedNode;
-  }, [nodes, selectedNode]);
-
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
       {/* ── Top Header & Create Action ────────────────────────────────────────── */}
@@ -475,13 +509,20 @@ export default function Flows() {
           </div>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/20 transition duration-150 cursor-pointer w-fit"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create Config Flow</span>
-        </button>
+        {isReadOnlyNode ? (
+          <div className="flex items-center gap-2 px-3.5 py-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold rounded-xl w-fit">
+            <Eye className="w-3.5 h-3.5 text-amber-400" />
+            <span>Observer Mode (Read-Only)</span>
+          </div>
+        ) : (
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/20 transition duration-150 cursor-pointer w-fit"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Config Flow</span>
+          </button>
+        )}
       </div>
 
       {/* ── Switch & Table Selector Bar ────────────────────────────────────────── */}
@@ -549,6 +590,21 @@ export default function Flows() {
         </div>
       </div>
 
+      {/* ── Observer Mode Informational Notice ──────────────────────────────── */}
+      {isReadOnlyNode && (
+        <div className="p-4 rounded-xl border bg-amber-950/20 border-amber-800/40 text-amber-300 flex items-start gap-3 shadow-md backdrop-blur-md">
+          <Shield className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <div className="font-bold uppercase tracking-wider text-amber-300 flex items-center gap-2">
+              Passive Observer Mode Active
+            </div>
+            <p className="text-zinc-300 leading-relaxed">
+              Device <span className="font-mono font-bold text-amber-200">{selectedNodeLabel}</span> is part of OpenStack cloud infrastructure. Forwarding rules and security policies are authoritatively governed by <strong>OpenStack OVN</strong>. SDN controllers connect strictly as telemetry observers; direct flow creation, editing, and deletion are disabled to ensure cloud data plane stability.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Status / Message Banner ────────────────────────────────────────── */}
       <MessageBanner message={message} clearMessage={() => setMessage("")} />
 
@@ -560,12 +616,27 @@ export default function Flows() {
               <h2 className="text-base font-bold text-zinc-100">
                 Active Flow Rules
               </h2>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Full CRUD & Live Counters
-              </span>
+              {isReadOnlyNode ? (
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                  <Eye className="w-3 h-3" />
+                  Observer Telemetry Only
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  Full CRUD & Live Counters
+                </span>
+              )}
             </div>
             <p className="text-xs text-zinc-400 mt-1">
-              Flow rules configured on switch <strong className="text-zinc-200">{selectedNodeLabel}</strong> (Table {selectedTable}). Click <strong>Edit</strong> or <strong>Delete</strong> to modify network forwarding behavior.
+              {isReadOnlyNode ? (
+                <>
+                  Flow rules observed on device <strong className="text-zinc-200">{selectedNodeLabel}</strong> (Table {selectedTable}). Direct modifications are disabled to preserve OpenStack OVN network integrity.
+                </>
+              ) : (
+                <>
+                  Flow rules configured on switch <strong className="text-zinc-200">{selectedNodeLabel}</strong> (Table {selectedTable}). Click <strong>Edit</strong> or <strong>Delete</strong> to modify network forwarding behavior.
+                </>
+              )}
             </p>
           </div>
           <span className="text-xs text-zinc-400 font-mono">
@@ -585,15 +656,18 @@ export default function Flows() {
               No Flow Rules Found
             </div>
             <p className="text-xs text-zinc-500 max-w-md">
-              There are no flow entries in Table {selectedTable} for switch <span className="font-mono text-zinc-400">{selectedNode}</span>. Click below to add a new flow rule.
+              There are no flow entries observed in Table {selectedTable} for switch <span className="font-mono text-zinc-400">{selectedNode}</span>.
+              {!isReadOnlyNode && " Click below to add a new flow rule."}
             </p>
-            <button
-              onClick={openCreateModal}
-              className="mt-2 flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-emerald-600/20"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Flow Rule</span>
-            </button>
+            {!isReadOnlyNode && (
+              <button
+                onClick={openCreateModal}
+                className="mt-2 flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-emerald-600/20"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Flow Rule</span>
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -643,24 +717,33 @@ export default function Flows() {
                       <div className="mt-0.5">Hard: {flow.hardTimeout}s</div>
                     </td>
                     <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openEditModal(flow)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 transition text-xs font-semibold cursor-pointer"
-                          title="Edit Flow Rule"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>Edit</span>
-                        </button>
-                        <button
-                          onClick={() => handleDelete(flow)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 transition text-xs font-semibold cursor-pointer"
-                          title="Delete Flow Rule"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete</span>
-                        </button>
-                      </div>
+                      {isReadOnlyNode ? (
+                        <div className="flex items-center justify-end">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-zinc-800/60 border border-zinc-700/40 text-zinc-400 text-[11px] font-mono">
+                            <Lock className="w-3 h-3 text-zinc-500" />
+                            Observer Only
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openEditModal(flow)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 transition text-xs font-semibold cursor-pointer"
+                            title="Edit Flow Rule"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleDelete(flow)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/30 transition text-xs font-semibold cursor-pointer"
+                            title="Delete Flow Rule"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
