@@ -89,6 +89,38 @@ function odlRequest(reqPath, method = "GET", body = null) {
 
 const db = new Database("users.db");
 
+// Users table schema initialization & migration
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'admin',
+    full_name TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'admin'"); } catch (_) {}
+try { db.exec("ALTER TABLE users ADD COLUMN full_name TEXT DEFAULT ''"); } catch (_) {}
+try { db.exec("ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''"); } catch (_) {}
+try { db.exec("ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT NULL"); } catch (_) {}
+try { db.exec("ALTER TABLE users ADD COLUMN updated_at TEXT DEFAULT NULL"); } catch (_) {}
+try { db.exec("UPDATE users SET created_at = datetime('now') WHERE created_at IS NULL"); } catch (_) {}
+try { db.exec("UPDATE users SET updated_at = datetime('now') WHERE updated_at IS NULL"); } catch (_) {}
+
+// Ensure default admin user: admin / admin
+const existingAdminCheck = db.prepare("SELECT * FROM users WHERE username = ?").get("admin");
+if (!existingAdminCheck) {
+  const adminHash = bcrypt.hashSync("admin", 10);
+  db.prepare(`
+    INSERT INTO users (username, password_hash, role, full_name, email)
+    VALUES (?, ?, ?, ?, ?)
+  `).run("admin", adminHash, "admin", "System Administrator", "admin@pntc.local");
+  console.log("Created default admin user 'admin' (password: admin).");
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS slices (
     id TEXT PRIMARY KEY,
@@ -242,13 +274,180 @@ app.post("/api/login", async (req, res) => {
   }
   const match = await bcrypt.compare(password, user.password_hash);
   if (match) {
-    res.json({ success: true });
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role || "admin",
+        full_name: user.full_name || "",
+        email: user.email || "",
+      },
+    });
   } else {
     sendAlertEmail(
       "Failed login attempt",
       `A failed login attempt was made for username "${username}" at ${new Date().toISOString()}.`
     );
     res.status(401).json({ success: false, error: "Invalid username or password" });
+  }
+});
+
+// GET /api/users - List all users (excluding password hashes)
+app.get("/api/users", (req, res) => {
+  try {
+    const users = db
+      .prepare("SELECT id, username, role, full_name, email, created_at, updated_at FROM users ORDER BY id ASC")
+      .all();
+    res.json({ success: true, users });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/users - Create a new user
+app.post("/api/users", async (req, res) => {
+  try {
+    const { username, password, role, full_name, email } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: "Username and password are required" });
+    }
+    const cleanUsername = String(username).trim();
+    if (cleanUsername.length < 3) {
+      return res.status(400).json({ success: false, error: "Username must be at least 3 characters" });
+    }
+    if (String(password).length < 4) {
+      return res.status(400).json({ success: false, error: "Password must be at least 4 characters" });
+    }
+
+    const existing = db.prepare("SELECT id FROM users WHERE username = ?").get(cleanUsername);
+    if (existing) {
+      return res.status(409).json({ success: false, error: `Username "${cleanUsername}" is already taken` });
+    }
+
+    const password_hash = await bcrypt.hash(password, 10);
+    const validRole = ["admin", "operator", "viewer"].includes(role) ? role : "operator";
+    const cleanFullName = full_name ? String(full_name).trim() : "";
+    const cleanEmail = email ? String(email).trim() : "";
+
+    const stmt = db.prepare(`
+      INSERT INTO users (username, password_hash, role, full_name, email, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `);
+    const info = stmt.run(cleanUsername, password_hash, validRole, cleanFullName, cleanEmail);
+
+    const newUser = db
+      .prepare("SELECT id, username, role, full_name, email, created_at, updated_at FROM users WHERE id = ?")
+      .get(info.lastInsertRowid);
+
+    res.status(201).json({ success: true, user: newUser });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT /api/users/:id - Update user profile & optionally change password
+app.put("/api/users/:id", async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (!userId) {
+      return res.status(400).json({ success: false, error: "Invalid user ID" });
+    }
+
+    const existing = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    const { username, password, role, full_name, email } = req.body || {};
+    const cleanUsername = username ? String(username).trim() : existing.username;
+    const cleanFullName = full_name !== undefined ? String(full_name).trim() : existing.full_name;
+    const cleanEmail = email !== undefined ? String(email).trim() : existing.email;
+    const targetRole = role && ["admin", "operator", "viewer"].includes(role) ? role : existing.role;
+
+    if (cleanUsername !== existing.username) {
+      const clash = db.prepare("SELECT id FROM users WHERE username = ? AND id != ?").get(cleanUsername, userId);
+      if (clash) {
+        return res.status(409).json({ success: false, error: `Username "${cleanUsername}" is already taken` });
+      }
+    }
+
+    // Safety: ensure admin username is not renamed and role is not demoted
+    if (existing.username === "admin") {
+      if (cleanUsername !== "admin") {
+        return res.status(400).json({ success: false, error: "The primary 'admin' account username cannot be renamed" });
+      }
+      if (targetRole !== "admin") {
+        return res.status(400).json({ success: false, error: "The primary 'admin' account role cannot be changed" });
+      }
+    }
+
+    // Safety: ensure we don't demote the last remaining admin
+    if (existing.role === "admin" && targetRole !== "admin") {
+      const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
+      if (adminCount <= 1) {
+        return res.status(400).json({ success: false, error: "Cannot demote the last remaining administrator" });
+      }
+    }
+
+    if (password && String(password).trim().length > 0) {
+      if (String(password).length < 4) {
+        return res.status(400).json({ success: false, error: "Password must be at least 4 characters" });
+      }
+      const newHash = await bcrypt.hash(password, 10);
+      db.prepare(`
+        UPDATE users
+        SET username = ?, password_hash = ?, role = ?, full_name = ?, email = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(cleanUsername, newHash, targetRole, cleanFullName, cleanEmail, userId);
+    } else {
+      db.prepare(`
+        UPDATE users
+        SET username = ?, role = ?, full_name = ?, email = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(cleanUsername, targetRole, cleanFullName, cleanEmail, userId);
+    }
+
+    const updatedUser = db
+      .prepare("SELECT id, username, role, full_name, email, created_at, updated_at FROM users WHERE id = ?")
+      .get(userId);
+
+    res.json({ success: true, user: updatedUser });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/users/:id - Delete a user
+app.delete("/api/users/:id", (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (!userId) {
+      return res.status(400).json({ success: false, error: "Invalid user ID" });
+    }
+
+    const targetUser = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    // Prevent deleting the primary admin
+    if (targetUser.username === "admin") {
+      return res.status(400).json({ success: false, error: "The primary administrator 'admin' cannot be deleted" });
+    }
+
+    // Prevent deleting the last remaining admin
+    if (targetUser.role === "admin") {
+      const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").get().count;
+      if (adminCount <= 1) {
+        return res.status(400).json({ success: false, error: "Cannot delete the last remaining administrator" });
+      }
+    }
+
+    db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+    res.json({ success: true, message: `User "${targetUser.username}" deleted successfully` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

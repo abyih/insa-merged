@@ -279,4 +279,5 @@ if __name__ == "__main__":
     print(f"🧠 Model: {MODEL_NAME} (Zero-Shot Semantic Embedder)")
     print(f"🔒 Security: 100% Offline & Private (Air-gapped SDN compliant)")
     print("=" * 60)
-    app.run(host="127.0.0.1", port=PORT, debug=False)
+    HOST = os.environ.get("INTENT_SERVICE_HOST", "0.0.0.0")
+    app.run(host=HOST, port=PORT, debug=False)

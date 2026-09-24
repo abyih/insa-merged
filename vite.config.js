@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss()],
     server: {
+      host: process.env.VITE_HOST || "0.0.0.0",
       proxy: {
         "/api/rests": {
           target: odlTarget,
@@ -148,6 +149,12 @@ export default defineConfig(({ mode }) => {
           proxyTimeout: 15000,
         },
         "/api/login": {
+          target: "http://127.0.0.1:5000",
+          changeOrigin: true,
+          timeout: 10000,
+          proxyTimeout: 10000,
+        },
+        "/api/users": {
           target: "http://127.0.0.1:5000",
           changeOrigin: true,
           timeout: 10000,

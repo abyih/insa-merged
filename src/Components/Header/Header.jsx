@@ -19,14 +19,35 @@ import {
   Bell,
   ChevronDown,
   Lock,
+  Users as UsersIcon,
+  User,
 } from "lucide-react";
 import logo from "../../assets/images/insa_logo.png";
 import { useNotifications } from "../../context/NotificationContext";
 
 function Header() {
   const location = useLocation();
-  const isLoginPage = location.pathname === "/";
+  const isLoginPage = location.pathname === "/login" || location.pathname === "/";
   const [menuOpen, setMenuOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("currentUser") || "null");
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    const handleAuthChange = () => {
+      try {
+        setCurrentUser(JSON.parse(localStorage.getItem("currentUser") || "null"));
+      } catch {
+        setCurrentUser(null);
+      }
+    };
+    window.addEventListener("auth-changed", handleAuthChange);
+    return () => window.removeEventListener("auth-changed", handleAuthChange);
+  }, []);
   const [securityDropdownOpen, setSecurityDropdownOpen] = useState(false);
   const [mobileSecurityOpen, setMobileSecurityOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -167,6 +188,7 @@ function Header() {
     { label: "Cloud", icon: <Cloud className="w-4 h-4" />, to: "/cloud" },
     { label: "VM Map", icon: <Network className="w-4 h-4" />, to: "/vm-topology" },
     { label: "Stats", icon: <Activity className="w-4 h-4" />, to: "/stats" },
+    { label: "Users", icon: <UsersIcon className="w-4 h-4" />, to: "/users" },
     { label: "Tools", icon: <Wrench className="w-4 h-4" />, to: "/api-tester" },
   ];
 
@@ -374,13 +396,34 @@ function Header() {
           )}
         </button>
 
+        {/* Current User Profile Badge (Desktop) */}
+        {!isLoginPage && currentUser && (
+          <Link
+            to="/users"
+            className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-lg border border-zinc-800 bg-zinc-900/60 hover:border-zinc-700 transition-all text-xs"
+            title="User Profile & Management"
+          >
+            <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-indigo-500 to-cyan-500 flex items-center justify-center text-[10px] font-bold text-white uppercase">
+              {currentUser.username ? currentUser.username[0] : "A"}
+            </div>
+            <span className="font-semibold text-zinc-200">{currentUser.username}</span>
+            <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+              {currentUser.role || "Admin"}
+            </span>
+          </Link>
+        )}
+
         {/* Logout (Desktop) */}
         {!isLoginPage && (
           <div className="hidden xl:flex items-center gap-3">
             <div className="h-4 w-px bg-zinc-850"></div>
             <Link
-              to="/"
-              onClick={() => { localStorage.removeItem("isAuthenticated"); window.dispatchEvent(new Event("auth-changed")); }}
+              to="/login"
+              onClick={() => {
+                localStorage.removeItem("isAuthenticated");
+                localStorage.removeItem("currentUser");
+                window.dispatchEvent(new Event("auth-changed"));
+              }}
               className="flex items-center gap-1.5 py-1.5 px-3 border border-zinc-850 hover:bg-red-950/20 hover:border-red-900/40 hover:text-red-400 text-zinc-400 rounded-lg text-xs font-semibold transition-all duration-200"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -530,9 +573,10 @@ function Header() {
             })}
             <div className="h-px bg-zinc-850 my-2"></div>
             <Link
-              to="/"
+              to="/login"
               onClick={() => {
                 localStorage.removeItem("isAuthenticated");
+                localStorage.removeItem("currentUser");
                 window.dispatchEvent(new Event("auth-changed"));
                 setMenuOpen(false);
               }}

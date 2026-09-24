@@ -6,6 +6,8 @@ import NodeConnector from "./Pages/Nodes/NodeConnector";
 import TopologySimple from "./Pages/Topology/TopologySimple";
 import Spinner from "./Components/Spinner";
 import Login from "./Components/Login/Login";
+import ProtectedRoute from "./Components/ProtectedRoute";
+import Users from "./Pages/Users";
 import Layout from "./Components/Layout/Layout";
 import ApiTester from "./Pages/ApiTester/ApiTester";
 import Yangman from "./Pages/Yangui/YangLast";
@@ -357,23 +359,24 @@ const App = () => (
             <Routes>
               <Route path="/"                    element={<Navigate to="/dashboard" replace />} />
               <Route path="/login"               element={<Login />} />
-              <Route path="/dashboard"           element={<Dashboard />} />
-              <Route path="/nodes"               element={<AllNodes />} />
-              <Route path="/node/:nodeId/detail" element={<NodeConnector />} />
-              <Route path="/flows"               element={<Flows />} />
-              <Route path="/flow-manager"       element={<FlowManager />} />
-              <Route path="/stats"               element={<Stats />} />
-              <Route path="/topology"            element={<TopologyRoute />} />
-              <Route path="/cloud"               element={<Cloud />} />
-              <Route path="/vm-topology"         element={<VmTopologyMap />} />
+              <Route path="/dashboard"           element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/users"               element={<ProtectedRoute><Users /></ProtectedRoute>} />
+              <Route path="/nodes"               element={<ProtectedRoute><AllNodes /></ProtectedRoute>} />
+              <Route path="/node/:nodeId/detail" element={<ProtectedRoute><NodeConnector /></ProtectedRoute>} />
+              <Route path="/flows"               element={<ProtectedRoute><Flows /></ProtectedRoute>} />
+              <Route path="/flow-manager"       element={<ProtectedRoute><FlowManager /></ProtectedRoute>} />
+              <Route path="/stats"               element={<ProtectedRoute><Stats /></ProtectedRoute>} />
+              <Route path="/topology"            element={<ProtectedRoute><TopologyRoute /></ProtectedRoute>} />
+              <Route path="/cloud"               element={<ProtectedRoute><Cloud /></ProtectedRoute>} />
+              <Route path="/vm-topology"         element={<ProtectedRoute><VmTopologyMap /></ProtectedRoute>} />
               
               {/* Slicing Suite Routes */}
-              <Route path="/slicing"              element={<SlicingHub defaultTab="overview" />} />
-              <Route path="/slicing/overview"     element={<SlicingHub defaultTab="overview" />} />
-              <Route path="/slicing/onos"         element={<SlicingHub defaultTab="onos" />} />
-              <Route path="/slicing/openstack"    element={<SlicingHub defaultTab="openstack" />} />
-              <Route path="/slicing/odl"          element={<SlicingHub defaultTab="odl" />} />
-              <Route path="/slicing/verification" element={<SlicingHub defaultTab="verification" />} />
+              <Route path="/slicing"              element={<ProtectedRoute><SlicingHub defaultTab="overview" /></ProtectedRoute>} />
+              <Route path="/slicing/overview"     element={<ProtectedRoute><SlicingHub defaultTab="overview" /></ProtectedRoute>} />
+              <Route path="/slicing/onos"         element={<ProtectedRoute><SlicingHub defaultTab="onos" /></ProtectedRoute>} />
+              <Route path="/slicing/openstack"    element={<ProtectedRoute><SlicingHub defaultTab="openstack" /></ProtectedRoute>} />
+              <Route path="/slicing/odl"          element={<ProtectedRoute><SlicingHub defaultTab="odl" /></ProtectedRoute>} />
+              <Route path="/slicing/verification" element={<ProtectedRoute><SlicingHub defaultTab="verification" /></ProtectedRoute>} />
 
               {/* Slicing Backward Compatibility Aliases */}
               <Route path="/network-slicing"      element={<Navigate to="/slicing/onos" replace />} />
@@ -381,19 +384,19 @@ const App = () => (
               <Route path="/slicing-verification" element={<Navigate to="/slicing/verification" replace />} />
 
               {/* Security Suite Routes */}
-              <Route path="/security"            element={<SecurityHub defaultTab="overview" />} />
-              <Route path="/security/overview"   element={<SecurityHub defaultTab="overview" />} />
-              <Route path="/security/anomaly"    element={<SecurityHub defaultTab="anomaly" />} />
-              <Route path="/security/linkguard"  element={<SecurityHub defaultTab="linkguard" />} />
-              <Route path="/security/tls"        element={<SecurityHub defaultTab="tls" />} />
+              <Route path="/security"            element={<ProtectedRoute><SecurityHub defaultTab="overview" /></ProtectedRoute>} />
+              <Route path="/security/overview"   element={<ProtectedRoute><SecurityHub defaultTab="overview" /></ProtectedRoute>} />
+              <Route path="/security/anomaly"    element={<ProtectedRoute><SecurityHub defaultTab="anomaly" /></ProtectedRoute>} />
+              <Route path="/security/linkguard"  element={<ProtectedRoute><SecurityHub defaultTab="linkguard" /></ProtectedRoute>} />
+              <Route path="/security/tls"        element={<ProtectedRoute><SecurityHub defaultTab="tls" /></ProtectedRoute>} />
 
               {/* Security Backward Compatibility Aliases */}
               <Route path="/anomaly"             element={<Navigate to="/security/anomaly" replace />} />
               <Route path="/linkguard"           element={<Navigate to="/security/linkguard" replace />} />
               <Route path="/tls"                 element={<Navigate to="/security/tls" replace />} />
 
-              <Route path="/api-tester"          element={<ApiTester />} />
-              <Route path="/yangui"              element={<Yangman />} />
+              <Route path="/api-tester"          element={<ProtectedRoute><ApiTester /></ProtectedRoute>} />
+              <Route path="/yangui"              element={<ProtectedRoute><Yangman /></ProtectedRoute>} />
               <Route path="*"                    element={<div className="p-8 text-gray-400">Page not found</div>} />
             </Routes>
           </Layout>
