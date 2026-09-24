@@ -703,7 +703,13 @@ export async function getOnosFlows(deviceId) {
 export async function getDevices(onlyAvailable = true) {
 	try {
 		const res = await onosApi.get("/devices");
-		const allDevices = res.data?.devices || [];
+		const rawDevices = res.data?.devices || [];
+		const allDevices = rawDevices.filter(
+			(d) =>
+				(d.type === "SWITCH" || (d.id && d.id.startsWith("of:"))) &&
+				!(d.id && d.id.startsWith("ovsdb:")) &&
+				d.type !== "CONTROLLER"
+		);
 		if (onlyAvailable) {
 			return allDevices.filter((d) => d.available === true || d.available === "true");
 		}

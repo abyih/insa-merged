@@ -106,9 +106,16 @@ export default function SliceTopology({
     return map;
   }, [slices]);
 
-  // Only consider active/connected OpenFlow devices
+  // Only consider active/connected OpenFlow devices (excluding OVSDB controller connections)
   const activeDevices = useMemo(() => {
-    return (devices || []).filter((d) => d.available !== false && d.available !== "false");
+    return (devices || []).filter(
+      (d) =>
+        d.available !== false &&
+        d.available !== "false" &&
+        (d.type === "SWITCH" || (d.id && d.id.startsWith("of:"))) &&
+        !(d.id && d.id.startsWith("ovsdb:")) &&
+        d.type !== "CONTROLLER"
+    );
   }, [devices]);
 
   // Use unified host list provided by parent (slicingService / ONOS)

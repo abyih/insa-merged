@@ -34,7 +34,13 @@ const onosApi = axios.create({ baseURL: `${SERVER_URL}/api/onos`, timeout: 5000 
 
 export async function getDevices() {
     const { data } = await onosApi.get('/devices');
-    return (data.devices || []).map((d) => ({
+    const rawDevices = (data.devices || []).filter(
+        (d) =>
+            (d.type === "SWITCH" || (d.id && d.id.startsWith("of:"))) &&
+            !(d.id && d.id.startsWith("ovsdb:")) &&
+            d.type !== "CONTROLLER"
+    );
+    return rawDevices.map((d) => ({
         id: d.id, type: "switch", available: d.available, mfr: d.mfr, sw: d.sw, raw: d,
     }));
 }

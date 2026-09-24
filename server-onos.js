@@ -377,7 +377,13 @@ app.get(["/api/onos/summary", "/api/onos/cloud-summary"], async (req, res) => {
       ]);
 
     const rawHosts = hostsRes.status === "fulfilled" ? hostsRes.value?.hosts || [] : [];
-    const rawDevices = devicesRes.status === "fulfilled" ? devicesRes.value?.devices || [] : [];
+    const allFetchedDevices = devicesRes.status === "fulfilled" ? devicesRes.value?.devices || [] : [];
+    const rawDevices = allFetchedDevices.filter(
+      (d) =>
+        (d.type === "SWITCH" || (d.id && d.id.startsWith("of:"))) &&
+        !(d.id && d.id.startsWith("ovsdb:")) &&
+        d.type !== "CONTROLLER"
+    );
     const rawLinks = linksRes.status === "fulfilled" ? linksRes.value?.links || [] : [];
     const rawFlows = flowsRes.status === "fulfilled" ? flowsRes.value?.flows || [] : [];
     const rawMeters = metersRes.status === "fulfilled" ? metersRes.value?.meters || [] : [];
@@ -494,8 +500,13 @@ app.get(["/api/onos/summary", "/api/onos/cloud-summary"], async (req, res) => {
    ============================================================================== */
 app.get("/api/onos/devices", async (req, res) => {
   try {
-    const data = await onosFetch("/onos/v1/devices");
-    res.json(data?.devices || []);
+    const switches = (data?.devices || []).filter(
+      (d) =>
+        (d.type === "SWITCH" || (d.id && d.id.startsWith("of:"))) &&
+        !(d.id && d.id.startsWith("ovsdb:")) &&
+        d.type !== "CONTROLLER"
+    );
+    res.json(switches);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
