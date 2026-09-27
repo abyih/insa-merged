@@ -17,6 +17,10 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api/, ""),
           timeout: 5000,
           proxyTimeout: 5000,
+          headers: {
+            Authorization: "Basic " + Buffer.from("admin:admin").toString("base64"),
+            Accept: "application/yang-data+json, application/json"
+          },
           configure: (proxy) => {
             proxy.on("proxyRes", (proxyRes) => {
               delete proxyRes.headers["www-authenticate"];
@@ -31,6 +35,10 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api/, ""),
           timeout: 5000,
           proxyTimeout: 5000,
+          headers: {
+            Authorization: "Basic " + Buffer.from("admin:admin").toString("base64"),
+            Accept: "application/yang-data+json, application/json"
+          },
           configure: (proxy) => {
             proxy.on("proxyRes", (proxyRes) => {
               delete proxyRes.headers["www-authenticate"];

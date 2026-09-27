@@ -98,6 +98,16 @@ keytool -importcert -alias ca -file ca-cert.pem \
   -keystore opendaylight-truststore.jks -storetype PKCS12 \
   -storepass "${PASS}" -noprompt
 
+# Copy directly into ODL etc folder so ODL never has missing file errors
+RAW_ODL_ETC="${ODL_ETC_PATH:-$HOME/karaf-0.23.0/etc}"
+ODL_ETC=$(echo "$RAW_ODL_ETC" | sed "s|\${VM_USER}|$CURRENT_USER|g; s|\$VM_USER|$CURRENT_USER|g; s|^~|$HOME|")
+
+if [ -d "${ODL_ETC}" ]; then
+  echo "[+] Deploying keystores directly to OpenDaylight etc (${ODL_ETC})..."
+  cp opendaylight-keystore.jks opendaylight-truststore.jks "${ODL_ETC}/"
+  chmod 644 "${ODL_ETC}"/opendaylight-*.jks
+fi
+
 # 4. Generate OVS switch certificate
 echo "[+] Generating OVS switch certificate..."
 openssl genrsa -out switch-key.pem 2048

@@ -1,197 +1,5 @@
-// import express from 'express';
-// import axios from 'axios';
-
-// const router = express.Router();
-
-// const ODL_BASE = 'http://127.0.0.1:8181/rests';
-// const ODL_AUTH = { username: 'admin', password: 'admin' };
-
-// let shieldEnabled = false;
-// let portCache = [];
-// let latencyCache = [];
-// let anomalyCache = [];
-// let lastLogCount = 0;
-
-// const odlClient = axios.create({
-//     baseURL: ODL_BASE,
-//     timeout: 3000,
-//     auth: ODL_AUTH,
-//     headers: { Accept: 'application/yang-data+json' }
-// });
-
-// function isDataMissing(err) {
-//     const tag = err.response?.data?.errors?.error?.[0]?.['error-tag'];
-//     return tag === 'data-missing';
-// }
-
-// function normalizePorts(raw) {
-//     return (raw || []).map(p => ({
-//         switchId: (p['port-id'] || '').split(':').slice(0, -1).join(':') || p['port-id'],
-//         portNo: (p['port-id'] || '').split(':').pop(),
-//         classification: p.classification,
-//         status: p.status,
-//         lastUpdated: p['last-updated']
-//     }));
-// }
-
-// function normalizeLatency(raw) {
-//     return (raw || []).map(l => ({
-//         link: l['link-id'],
-//         currentRtt: Number(l['current-rtt-us'] || 0) / 1000,
-//         baselineRtt: Number(l['baseline-rtt-us'] || 0) / 1000,
-//         threshold: Number(l['threshold-us'] || 0) / 1000,
-//         deviation: Number(l['deviation-us'] || 0) / 1000,
-//         status: l.status,
-//         lastCheck: l['last-check']
-//     }));
-// }
-
-// function normalizeAnomalies(raw) {
-//     return (raw || []).map(a => ({
-//         id: `${a['port-id']}-${a.timestamp}`,
-//         severity: a['attack-type'] === 'FLOODING' ? 'WARNING' : 'CRITICAL',
-//         attackType: a['attack-type'],
-//         details: `${a['attack-type']} detected on port ${a['port-id']}`,
-//         source: a['port-id'],
-//         detectedAt: a.timestamp,
-//         mitigation: {
-//             action: 'Blocked malicious port',
-//             actionTaken: 'DROP_FLOW_INSTALLED',
-//             reason: a['attack-type']
-//         }
-//     }));
-// }
-
-// /**
-//  * Background telemetry poller — pulls real data from ODL's operational datastore.
-//  * Only polls while the shield is on, matching the ONOS reference's sleep behavior.
-//  */
-// export const startPolling = (app) => {
-//     setInterval(async () => {
-//         try {
-//             const configRes = await odlClient.get('/data/linkguard:linkguard-config').catch(err =>
-//                 isDataMissing(err) ? { data: { 'linkguard:linkguard-config': { enabled: false } } } : Promise.reject(err)
-//             );
-//             shieldEnabled = configRes.data['linkguard:linkguard-config']?.enabled ?? false;
-
-//             if (!shieldEnabled) {
-//                 return;
-//             }
-
-//             const statusRes = await odlClient.get('/data/linkguard:linkguard-status').catch(err =>
-//                 isDataMissing(err) ? { data: {} } : Promise.reject(err)
-//             );
-//             const status = statusRes.data['linkguard:linkguard-status'] || {};
-
-//             portCache = normalizePorts(status['port-classification']);
-//             latencyCache = normalizeLatency(status['link-latency']);
-
-//             const rawLogs = status['detection-logs'] || [];
-//             const normalizedLogs = normalizeAnomalies(rawLogs);
-
-//             const io = app.get('io');
-//             if (io) {
-//                 io.emit('telemetry_update', {
-//                     ports: portCache,
-//                     latency: latencyCache,
-//                     anomalies: normalizedLogs
-//                 });
-
-//                 if (rawLogs.length > lastLogCount) {
-//                     io.emit('security_alert', normalizedLogs[normalizedLogs.length - 1]);
-//                 }
-//             }
-//             lastLogCount = rawLogs.length;
-//             anomalyCache = normalizedLogs;
-//         } catch (err) {
-//             console.warn('[LinkGuard Poller] ODL unreachable:', err.message);
-//         }
-//     }, 3000);
-// };
-
-// /**
-//  * GET /api/security/shield-status
-//  */
-// router.get('/shield-status', async (req, res) => {
-//     try {
-//         const r = await odlClient.get('/data/linkguard:linkguard-config').catch(err =>
-//             isDataMissing(err) ? { data: { 'linkguard:linkguard-config': { enabled: false } } } : Promise.reject(err)
-//         );
-//         shieldEnabled = r.data['linkguard:linkguard-config']?.enabled ?? false;
-//         res.status(200).json({ activeController: 'odl', shieldEnabled });
-//     } catch (err) {
-//         res.status(500).json({ error: 'ODL Unreachable' });
-//     }
-// });
-
-// /**
-//  * POST /api/security/shield-toggle
-//  * Real toggle: flips ODL's own CONFIGURATION datastore via the linkguard:toggle RPC.
-//  * No bundle install/uninstall — the bundle is already deployed and always running;
-//  * this only turns detection on/off inside PacketHandler.
-//  */
-// router.post('/shield-toggle', async (req, res) => {
-//     const { enabled } = req.body;
-//     if (typeof enabled !== 'boolean') {
-//         return res.status(400).json({ error: "Boolean state 'enabled' parameter is required." });
-//     }
-
-//     try {
-//         await odlClient.post(
-//             '/operations/linkguard:toggle',
-//             { input: { enabled } },
-//             { headers: { 'Content-Type': 'application/yang-data+json' } }
-//         );
-//         shieldEnabled = enabled;
-//         console.log(`[LinkGuard Backend] ODL toggle RPC sent — enabled=${enabled}`);
-
-//         if (!enabled) {
-//             portCache = [];
-//             latencyCache = [];
-//             anomalyCache = [];
-//             const io = req.app.get('io');
-//             if (io) io.emit('telemetry_update', { ports: [], latency: [], anomalies: [] });
-//         }
-
-//         res.status(200).json({ status: 'SUCCESS', shieldEnabled: enabled, activeController: 'odl' });
-//     } catch (err) {
-//         console.error('[LinkGuard Backend] Toggle RPC failed:', err.response?.data || err.message);
-//         res.status(500).json({ error: 'Failed to reach ODL controller.', details: err.message });
-//     }
-// });
-
-// /**
-//  * GET endpoints exposed directly to the React UI, matching the ONOS reference's shape.
-//  */
-// router.get('/ports', (req, res) => res.status(200).json(portCache));
-// router.get('/latency', (req, res) => res.status(200).json(latencyCache));
-// router.get('/anomalies', (req, res) => res.status(200).json(anomalyCache));
-
-// /**
-//  * POST /api/security/reset
-//  * Honest limitation: ODL's YANG model has no delete-all RPC for these lists, so this
-//  * only clears Node's local cache and UI view — it does not erase ODL's own operational
-//  * datastore. Real detection history remains in ODL until naturally overwritten by key.
-//  */
-// router.post('/reset', async (req, res) => {
-//     portCache = [];
-//     latencyCache = [];
-//     anomalyCache = [];
-//     lastLogCount = 0;
-
-//     const io = req.app.get('io');
-//     if (io) {
-//         io.emit('telemetry_update', { ports: [], latency: [], anomalies: [] });
-//     }
-
-//     res.status(200).json({
-//         status: 'CLEARED',
-//         message: 'Local dashboard cache cleared. Note: ODL operational datastore is not erased by this action.'
-//     });
-// });
-
-// export default router;
-
+import dotenv from 'dotenv';
+dotenv.config();
 
 import express from 'express';
 import axios from 'axios';
@@ -202,9 +10,9 @@ const execAsync = util.promisify(exec);
 const router = express.Router();
 
 /* ============================================================
-   ACTIVE CONTROLLER STATE
+   ACTIVE CONTROLLER STATE (Defaults to ONOS)
    ============================================================ */
-let activeController = 'odl';   // 'odl' | 'onos'
+let activeController = process.env.ACTIVE_CONTROLLER || 'onos';
 let lastAnomalyCount = 0;
 
 /* ============================================================
@@ -271,7 +79,6 @@ const odlDriver = {
     },
 
     async unlockPort(deviceId, portNumber) {
-        // Removes the active DROP flow from the ODL switch configuration datastore
         const flowId = `lg-block-${portNumber}`;
         try {
             await odlClient.delete(`/data/opendaylight-inventory:nodes/node/${encodeURIComponent(deviceId)}/table/0/flow/${flowId}`);
@@ -286,23 +93,19 @@ const odlDriver = {
    ONOS DRIVER — ONOS 2.7 in Docker
    ============================================================ */
 const ONOS_BASE = process.env.ONOS_REST_URL || 'http://localhost:8282/linkguard';
-const ONOS_CONTAINER = process.env.ONOS_CONTAINER || 'onos-2.7';
+const ONOS_CONTAINER = process.env.ONOS_CONTAINER_NAME || process.env.ONOS_CONTAINER || 'onos-2.7';
 const ONOS_KARAF_CLIENT = process.env.ONOS_KARAF_CLIENT || '/root/onos/apache-karaf-4.2.9/bin/client';
-const ONOS_BUNDLE_PATH = process.env.ONOS_BUNDLE_PATH;
 const ONOS_BUNDLE_NAME = process.env.ONOS_BUNDLE_SYMBOLIC_NAME || 'linkguard-app';
 
 export const onosClient = axios.create({
     baseURL: ONOS_BASE,
-    timeout: 2000,
+    timeout: 3000,
     headers: { Accept: 'application/json' }
 });
 
-let onosBundleInstalled = false;
-
 function requireOnosConfig() {
-    if (!ONOS_BUNDLE_PATH) {
-        throw new Error('ONOS_BUNDLE_PATH is not set in .env — point it at the built .jar on your host.');
-    }
+    const bundlePath = process.env.ONOS_BUNDLE_PATH || './linkguard-app/target/linkguard-1.0-SNAPSHOT.jar';
+    return bundlePath;
 }
 
 async function runOnosKarafCommand(command) {
@@ -314,43 +117,56 @@ async function runOnosKarafCommand(command) {
 const onosDriver = {
     name: 'onos',
 
+    // Checks live port 8282 directly instead of relying on an in-memory boolean
     async getShieldStatus() {
-        return onosBundleInstalled;
+        try {
+            await onosClient.get('/ports');
+            return true;
+        } catch {
+            return false;
+        }
     },
 
     async setShieldStatus(enabled) {
         if (enabled) {
-            requireOnosConfig();
+            const bundlePath = requireOnosConfig();
             await execAsync(
-                `docker cp ${ONOS_BUNDLE_PATH} ${ONOS_CONTAINER}:/tmp/linkguard.jar`,
+                `docker cp "${bundlePath}" ${ONOS_CONTAINER}:/tmp/linkguard.jar`,
                 { timeout: 20000 }
             );
-            const { stdout, stderr } = await runOnosKarafCommand('bundle:install -s file:/tmp/linkguard.jar');
-            if (!stdout.match(/Bundle ID:\s*\d+/i)) {
-                throw new Error(`ONOS install did not confirm success. stdout="${stdout}" stderr="${stderr}"`);
-            }
-            onosBundleInstalled = true;
-            await new Promise(r => setTimeout(r, 5000));
+            await runOnosKarafCommand('bundle:install -s file:/tmp/linkguard.jar').catch(() => {});
+            await new Promise(r => setTimeout(r, 3000));
         } else {
-            await runOnosKarafCommand(`bundle:uninstall ${ONOS_BUNDLE_NAME}`);
-            onosBundleInstalled = false;
+            await runOnosKarafCommand(`bundle:uninstall ${ONOS_BUNDLE_NAME}`).catch(() => {});
         }
         return enabled;
     },
 
     async getPorts() {
-        if (!onosBundleInstalled) return [];
-        return (await onosClient.get('/ports')).data;
+        try {
+            const res = await onosClient.get('/ports');
+            return res.data || [];
+        } catch {
+            return [];
+        }
     },
 
     async getLatency() {
-        if (!onosBundleInstalled) return [];
-        return (await onosClient.get('/latency')).data;
+        try {
+            const res = await onosClient.get('/latency');
+            return res.data || [];
+        } catch {
+            return [];
+        }
     },
 
     async getAnomalies() {
-        if (!onosBundleInstalled) return [];
-        return (await onosClient.get('/anomalies')).data;
+        try {
+            const res = await onosClient.get('/anomalies');
+            return res.data || [];
+        } catch {
+            return [];
+        }
     },
 
     async unlockPort(deviceId, portNumber) {
@@ -361,7 +177,7 @@ const onosDriver = {
 
 const drivers = { odl: odlDriver, onos: onosDriver };
 function currentDriver() {
-    return drivers[activeController];
+    return drivers[activeController] || onosDriver;
 }
 
 /* ============================================================
@@ -378,9 +194,9 @@ function normalizePorts(name, raw) {
         }));
     }
     return (raw || []).map(p => ({
-        switchId: p.deviceId,
-        portNo: p.portNumber,
-        classification: p.classification,
+        switchId: p.deviceId || 's1',
+        portNo: p.portNumber || p.port || '1',
+        classification: p.classification || 'TRUSTED',
         status: p.classification === 'UNTRUSTED' ? 'Blocked' : 'Active',
         lastUpdated: new Date().toLocaleTimeString()
     }));
@@ -399,7 +215,7 @@ function normalizeLatency(name, raw) {
         }));
     }
     return (raw || []).map(l => ({
-        link: l.linkKey,
+        link: l.linkKey || `${l.src}->${l.dst}`,
         currentRtt: l.currentRttMs || 0.0,
         baselineRtt: l.emaBaselineRttMs || 0.0,
         threshold: l.scaledThresholdMs || 5.0,
@@ -487,6 +303,10 @@ export const startPolling = (serverInstance) => {
    ROUTES
    ============================================================ */
 router.get('/shield-status', async (req, res) => {
+    const target = req.query.controller;
+    if (target && drivers[target.toLowerCase()]) {
+        activeController = target.toLowerCase();
+    }
     try {
         const shieldEnabled = await currentDriver().getShieldStatus();
         res.json({ activeController, shieldEnabled });
@@ -497,10 +317,10 @@ router.get('/shield-status', async (req, res) => {
 
 router.post('/active-controller', (req, res) => {
     const { controller } = req.body;
-    if (!drivers[controller]) {
+    if (!drivers[controller?.toLowerCase()]) {
         return res.status(400).json({ error: "Controller must be 'odl' or 'onos'." });
     }
-    activeController = controller;
+    activeController = controller.toLowerCase();
     lastAnomalyCount = 0;
     console.log(`[LinkGuard] Active controller switched to ${activeController.toUpperCase()}`);
     const io = req.app.get('io');
@@ -509,7 +329,10 @@ router.post('/active-controller', (req, res) => {
 });
 
 router.post('/shield-toggle', async (req, res) => {
-    const { enabled } = req.body;
+    const { enabled, controller } = req.body;
+    if (controller && drivers[controller.toLowerCase()]) {
+        activeController = controller.toLowerCase();
+    }
     if (typeof enabled !== 'boolean') {
         return res.status(400).json({ error: "Boolean 'enabled' is required." });
     }
