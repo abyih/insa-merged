@@ -1,5 +1,6 @@
 package org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status;
 import java.lang.Class;
+import java.lang.Long;
 import java.lang.NullPointerException;
 import java.lang.Object;
 import java.lang.Override;
@@ -12,7 +13,7 @@ import javax.annotation.processing.Generated;
 import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.yangtools.binding.Augmentation;
 import org.opendaylight.yangtools.binding.lib.AbstractEntryObject;
-import org.opendaylight.yangtools.yang.common.Decimal64;
+import org.opendaylight.yangtools.yang.common.Uint64;
 
 /**
  * Class that builds {@link LinkLatency} instances. Overall design of the class is that of a
@@ -55,12 +56,13 @@ import org.opendaylight.yangtools.yang.common.Decimal64;
 @Generated("mdsal-binding-generator")
 public class LinkLatencyBuilder {
 
-    private Decimal64 _baselineRtt;
-    private Decimal64 _currentRtt;
+    private Uint64 _baselineRttUs;
+    private Uint64 _currentRttUs;
+    private Long _deviationUs;
     private String _lastCheck;
     private String _linkId;
     private String _status;
-    private Decimal64 _threshold;
+    private Uint64 _thresholdUs;
     private LinkLatencyKey key;
 
 
@@ -87,11 +89,12 @@ public class LinkLatencyBuilder {
         }
         this.key = base.key();
         this._linkId = base.getLinkId();
-        this._baselineRtt = base.getBaselineRtt();
-        this._currentRtt = base.getCurrentRtt();
+        this._baselineRttUs = base.getBaselineRttUs();
+        this._currentRttUs = base.getCurrentRttUs();
+        this._deviationUs = base.getDeviationUs();
         this._lastCheck = base.getLastCheck();
         this._status = base.getStatus();
-        this._threshold = base.getThreshold();
+        this._thresholdUs = base.getThresholdUs();
     }
 
 
@@ -106,21 +109,30 @@ public class LinkLatencyBuilder {
     }
     
     /**
-     * Return current value associated with the property corresponding to {@link LinkLatency#getBaselineRtt()}.
+     * Return current value associated with the property corresponding to {@link LinkLatency#getBaselineRttUs()}.
      *
      * @return current value
      */
-    public Decimal64 getBaselineRtt() {
-        return _baselineRtt;
+    public Uint64 getBaselineRttUs() {
+        return _baselineRttUs;
     }
     
     /**
-     * Return current value associated with the property corresponding to {@link LinkLatency#getCurrentRtt()}.
+     * Return current value associated with the property corresponding to {@link LinkLatency#getCurrentRttUs()}.
      *
      * @return current value
      */
-    public Decimal64 getCurrentRtt() {
-        return _currentRtt;
+    public Uint64 getCurrentRttUs() {
+        return _currentRttUs;
+    }
+    
+    /**
+     * Return current value associated with the property corresponding to {@link LinkLatency#getDeviationUs()}.
+     *
+     * @return current value
+     */
+    public Long getDeviationUs() {
+        return _deviationUs;
     }
     
     /**
@@ -151,12 +163,12 @@ public class LinkLatencyBuilder {
     }
     
     /**
-     * Return current value associated with the property corresponding to {@link LinkLatency#getThreshold()}.
+     * Return current value associated with the property corresponding to {@link LinkLatency#getThresholdUs()}.
      *
      * @return current value
      */
-    public Decimal64 getThreshold() {
-        return _threshold;
+    public Uint64 getThresholdUs() {
+        return _thresholdUs;
     }
 
     /**
@@ -185,26 +197,38 @@ public class LinkLatencyBuilder {
     }
     
     /**
-     * Set the property corresponding to {@link LinkLatency#getBaselineRtt()} to the specified
+     * Set the property corresponding to {@link LinkLatency#getBaselineRttUs()} to the specified
      * value.
      *
      * @param value desired value
      * @return this builder
      */
-    public LinkLatencyBuilder setBaselineRtt(final Decimal64 value) {
-        this._baselineRtt = value;
+    public LinkLatencyBuilder setBaselineRttUs(final Uint64 value) {
+        this._baselineRttUs = value;
         return this;
     }
     
     /**
-     * Set the property corresponding to {@link LinkLatency#getCurrentRtt()} to the specified
+     * Set the property corresponding to {@link LinkLatency#getCurrentRttUs()} to the specified
      * value.
      *
      * @param value desired value
      * @return this builder
      */
-    public LinkLatencyBuilder setCurrentRtt(final Decimal64 value) {
-        this._currentRtt = value;
+    public LinkLatencyBuilder setCurrentRttUs(final Uint64 value) {
+        this._currentRttUs = value;
+        return this;
+    }
+    
+    /**
+     * Set the property corresponding to {@link LinkLatency#getDeviationUs()} to the specified
+     * value.
+     *
+     * @param value desired value
+     * @return this builder
+     */
+    public LinkLatencyBuilder setDeviationUs(final Long value) {
+        this._deviationUs = value;
         return this;
     }
     
@@ -245,14 +269,14 @@ public class LinkLatencyBuilder {
     }
     
     /**
-     * Set the property corresponding to {@link LinkLatency#getThreshold()} to the specified
+     * Set the property corresponding to {@link LinkLatency#getThresholdUs()} to the specified
      * value.
      *
      * @param value desired value
      * @return this builder
      */
-    public LinkLatencyBuilder setThreshold(final Decimal64 value) {
-        this._threshold = value;
+    public LinkLatencyBuilder setThresholdUs(final Uint64 value) {
+        this._thresholdUs = value;
         return this;
     }
     
@@ -299,22 +323,24 @@ public class LinkLatencyBuilder {
         extends AbstractEntryObject<LinkLatency, LinkLatencyKey>
         implements LinkLatency {
     
-        private final Decimal64 _baselineRtt;
-        private final Decimal64 _currentRtt;
+        private final Uint64 _baselineRttUs;
+        private final Uint64 _currentRttUs;
+        private final Long _deviationUs;
         private final String _lastCheck;
         private final String _linkId;
         private final String _status;
-        private final Decimal64 _threshold;
+        private final Uint64 _thresholdUs;
     
         LinkLatencyImpl(final LinkLatencyBuilder base) {
             super(base.augmentation, extractKey(base));
             final var key = key();
             this._linkId = key.getLinkId();
-            this._baselineRtt = base.getBaselineRtt();
-            this._currentRtt = base.getCurrentRtt();
+            this._baselineRttUs = base.getBaselineRttUs();
+            this._currentRttUs = base.getCurrentRttUs();
+            this._deviationUs = base.getDeviationUs();
             this._lastCheck = base.getLastCheck();
             this._status = base.getStatus();
-            this._threshold = base.getThreshold();
+            this._thresholdUs = base.getThresholdUs();
         }
         
         private static @NonNull LinkLatencyKey extractKey(final LinkLatencyBuilder base) {
@@ -324,13 +350,18 @@ public class LinkLatencyBuilder {
         }
     
         @Override
-        public Decimal64 getBaselineRtt() {
-            return _baselineRtt;
+        public Uint64 getBaselineRttUs() {
+            return _baselineRttUs;
         }
         
         @Override
-        public Decimal64 getCurrentRtt() {
-            return _currentRtt;
+        public Uint64 getCurrentRttUs() {
+            return _currentRttUs;
+        }
+        
+        @Override
+        public Long getDeviationUs() {
+            return _deviationUs;
         }
         
         @Override
@@ -349,10 +380,11 @@ public class LinkLatencyBuilder {
         }
         
         @Override
-        public Decimal64 getThreshold() {
-            return _threshold;
+        public Uint64 getThresholdUs() {
+            return _thresholdUs;
         }
     
+        
         
         
         

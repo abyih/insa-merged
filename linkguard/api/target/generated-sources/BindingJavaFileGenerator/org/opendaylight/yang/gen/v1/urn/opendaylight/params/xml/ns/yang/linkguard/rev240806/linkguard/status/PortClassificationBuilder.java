@@ -10,10 +10,8 @@ import java.util.Map;
 import java.util.Objects;
 import javax.annotation.processing.Generated;
 import org.eclipse.jdt.annotation.NonNull;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.PortClassificationType;
 import org.opendaylight.yangtools.binding.Augmentation;
 import org.opendaylight.yangtools.binding.lib.AbstractEntryObject;
-import org.opendaylight.yangtools.yang.common.Uint32;
 
 /**
  * Class that builds {@link PortClassification} instances. Overall design of the class is that of a
@@ -56,10 +54,10 @@ import org.opendaylight.yangtools.yang.common.Uint32;
 @Generated("mdsal-binding-generator")
 public class PortClassificationBuilder {
 
-    private PortClassificationType _classification;
+    private String _classification;
     private String _lastUpdated;
     private String _portId;
-    private Uint32 _portNo;
+    private String _portNo;
     private String _status;
     private String _switchId;
     private PortClassificationKey key;
@@ -111,7 +109,7 @@ public class PortClassificationBuilder {
      *
      * @return current value
      */
-    public PortClassificationType getClassification() {
+    public String getClassification() {
         return _classification;
     }
     
@@ -138,7 +136,7 @@ public class PortClassificationBuilder {
      *
      * @return current value
      */
-    public Uint32 getPortNo() {
+    public String getPortNo() {
         return _portNo;
     }
     
@@ -192,7 +190,7 @@ public class PortClassificationBuilder {
      * @param value desired value
      * @return this builder
      */
-    public PortClassificationBuilder setClassification(final PortClassificationType value) {
+    public PortClassificationBuilder setClassification(final String value) {
         this._classification = value;
         return this;
     }
@@ -228,7 +226,7 @@ public class PortClassificationBuilder {
      * @param value desired value
      * @return this builder
      */
-    public PortClassificationBuilder setPortNo(final Uint32 value) {
+    public PortClassificationBuilder setPortNo(final String value) {
         this._portNo = value;
         return this;
     }
@@ -300,10 +298,10 @@ public class PortClassificationBuilder {
         extends AbstractEntryObject<PortClassification, PortClassificationKey>
         implements PortClassification {
     
-        private final PortClassificationType _classification;
+        private final String _classification;
         private final String _lastUpdated;
         private final String _portId;
-        private final Uint32 _portNo;
+        private final String _portNo;
         private final String _status;
         private final String _switchId;
     
@@ -325,7 +323,7 @@ public class PortClassificationBuilder {
         }
     
         @Override
-        public PortClassificationType getClassification() {
+        public String getClassification() {
             return _classification;
         }
         
@@ -340,7 +338,7 @@ public class PortClassificationBuilder {
         }
         
         @Override
-        public Uint32 getPortNo() {
+        public String getPortNo() {
             return _portNo;
         }
         

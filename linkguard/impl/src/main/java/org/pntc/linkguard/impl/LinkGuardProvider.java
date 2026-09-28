@@ -1,117 +1,183 @@
+// /*
+//  * Copyright © 2026 PNTC and others.  All rights reserved.
+//  *
+//  * This program and the accompanying materials are made available under the
+//  * terms of the Eclipse Public License v1.0 which accompanies this distribution,
+//  * and is available at http://www.eclipse.org/legal/epl-v10.html
+//  */
 // package org.pntc.linkguard.impl;
 
 // import com.google.common.util.concurrent.Futures;
 // import com.google.common.util.concurrent.ListenableFuture;
-// import com.google.common.util.concurrent.MoreExecutors;
 // import java.util.concurrent.Executors;
 // import java.util.concurrent.ScheduledExecutorService;
+// import java.util.concurrent.TimeUnit;
 // import org.opendaylight.mdsal.binding.api.DataBroker;
 // import org.opendaylight.mdsal.binding.api.NotificationService;
 // import org.opendaylight.mdsal.binding.api.RpcProviderService;
-// import org.opendaylight.mdsal.binding.api.WriteTransaction;
-// import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
-// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.*;
+// import org.opendaylight.mdsal.binding.api.RpcService;
 // import org.opendaylight.yang.gen.v1.urn.opendaylight.packet.service.rev130709.PacketReceived;
-// import org.opendaylight.yang.gen.v1.urn.opendaylight.packet.service.rev130709.TransmitPacket;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.Reset;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ResetInput;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ResetOutput;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ResetOutputBuilder;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.Toggle;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ToggleInput;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ToggleOutput;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ToggleOutputBuilder;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.Unlock;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.UnlockInput;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.UnlockOutput;
+// import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.UnlockOutputBuilder;
 // import org.opendaylight.yangtools.concepts.Registration;
-// import org.opendaylight.yangtools.yang.binding.InstanceIdentifier;
-// import org.opendaylight.yangtools.yang.common.RpcResult;
 // import org.opendaylight.yangtools.yang.common.RpcResultBuilder;
+// import org.opendaylight.yangtools.yang.common.RpcResult;
 // import org.slf4j.Logger;
 // import org.slf4j.LoggerFactory;
 
-// public class LinkGuardProvider implements Toggle {
+// /**
+//  * Top-level OSGi provider. Builds the component graph, registers the packet-in listener and the
+//  * toggle / unlock / reset RPCs, and schedules the periodic tasks (rolling re-verification sweep,
+//  * PLPC window reset).
+//  */
+// public class LinkGuardProvider {
 //     private static final Logger LOG = LoggerFactory.getLogger(LinkGuardProvider.class);
 
 //     private final DataBroker dataBroker;
 //     private final NotificationService notificationService;
 //     private final RpcProviderService rpcProviderService;
-//     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+//     private final RpcService rpcService;
 
-//     private PacketHandler packetHandler;
+//     private ScheduledExecutorService scheduler;
+//     private Registration packetReg;
 //     private Registration rpcReg;
-//     private Registration pktReg;
-//     private Registration latencyReg;
 
-//     public LinkGuardProvider(DataBroker dataBroker, NotificationService notificationService,
-//                               RpcProviderService rpcProviderService) {
+//     private FlowManager flows;
+//     private AnomalyStore store;
+//     private PortClassifier classifier;
+//     private FloodDetector flood;
+//     private ProbeService probes;
+//     private PortBlocker blocker;
+//     private LinkVerifier verifier;
+//     private PacketHandler handler;
+
+//     public LinkGuardProvider(final DataBroker dataBroker, final NotificationService notificationService,
+//                              final RpcProviderService rpcProviderService, final RpcService rpcService) {
 //         this.dataBroker = dataBroker;
 //         this.notificationService = notificationService;
 //         this.rpcProviderService = rpcProviderService;
+//         this.rpcService = rpcService;
 //     }
 
 //     public void init() {
-//         try {
-//             LOG.info("LINK-GUARD: Initializing core security framework...");
-//             initializeDatastore();
+//         scheduler = Executors.newScheduledThreadPool(4, r -> {
+//             Thread t = new Thread(r, "linkguard-worker");
+//             t.setDaemon(true);
+//             return t;
+//         });
 
-//             FlowManager flowManager = new FlowManager(dataBroker, scheduler);
-//             TransmitPacket transmitPacket = null; 
-            
-//             LatencyEngine latencyEngine = new LatencyEngine(flowManager, transmitPacket, scheduler);
-//             this.packetHandler = new PacketHandler(flowManager, latencyEngine, scheduler);
+//         flows = new FlowManager(dataBroker, rpcService, scheduler);
+//         store = new AnomalyStore(flows);
+//         store.loadFromDisk();
+//         classifier = new PortClassifier();
+//         flood = new FloodDetector();
+//         probes = new ProbeService(flows, scheduler);
+//         verifier = new LinkVerifier(flows, probes, classifier, scheduler, () -> handler != null && handler.isEnabled());
+//         blocker = new PortBlocker(flows, store, classifier, flood, scheduler);
+//         blocker.setVerifier(verifier);
+//         verifier.setBlocker(blocker);
+//         handler = new PacketHandler(probes, verifier, blocker, classifier, flood, flows);
 
-//             this.pktReg = notificationService.registerListener(PacketReceived.class, packetHandler);
-//             this.latencyReg = notificationService.registerListener(PacketReceived.class, latencyEngine);
-
-//             this.rpcReg = rpcProviderService.registerRpcImplementation(this);
-
-//             LOG.info("LINK-GUARD: System fully Active and Monitoring.");
-//         } catch (Exception e) {
-//             LOG.error("LINK-GUARD: Error during initialization: ", e);
-//         }
-//     }
-
-//     private void initializeDatastore() {
-//         try {
-//             // 1. Write Configuration Data in its own transaction (MDSAL 15 rule)
-//             LinkguardConfig config = new LinkguardConfigBuilder().setEnabled(false).build();
-//             WriteTransaction tx1 = dataBroker.newWriteOnlyTransaction();
-//             tx1.put(LogicalDatastoreType.CONFIGURATION, 
-//                 InstanceIdentifier.create(LinkguardConfig.class).toIdentifier(), 
-//                 config);
-//             tx1.commit();
-
-//             // 2. Write Operational Data in its own separate transaction
-//             LinkguardStatus status = new LinkguardStatusBuilder().build();
-//             WriteTransaction tx2 = dataBroker.newWriteOnlyTransaction();
-//             tx2.put(LogicalDatastoreType.OPERATIONAL, 
-//                 InstanceIdentifier.create(LinkguardStatus.class).toIdentifier(), 
-//                 status);
-//             tx2.commit();
-
-//             LOG.info("LINK-GUARD: Datastore successfully initialized.");
-//         } catch (Exception e) {
-//             LOG.error("LINK-GUARD: Failed to initialize datastore", e);
-//         }
-//     }
-
-//     @Override
-//     public ListenableFuture<RpcResult<ToggleOutput>> invoke(ToggleInput input) {
-//         boolean enabled = Boolean.TRUE.equals(input.getEnabled());
-//         LOG.info("LINK-GUARD: Toggle RPC received. State -> {}", enabled);
-
-//         LinkguardConfig config = new LinkguardConfigBuilder().setEnabled(enabled).build();
-//         WriteTransaction tx = dataBroker.newWriteOnlyTransaction();
-//         tx.put(LogicalDatastoreType.CONFIGURATION,
-//             InstanceIdentifier.create(LinkguardConfig.class).toIdentifier(),
-//             config);
-
-//         return Futures.transform(tx.commit(), result -> {
-//             if (packetHandler != null) {
-//                 packetHandler.setEnabled(enabled);
+//         // Restore the shield state persisted by the last toggle (linkguard-config survives restarts).
+//         flows.restoreEnabled(on -> {
+//             if (on) {
+//                 handler.setEnabled(true);
+//                 LOG.info("LINK-GUARD shield restored to ENABLED from persisted config");
 //             }
-//             return RpcResultBuilder.success(new ToggleOutputBuilder().setStatus("SUCCESS").build()).build();
-//         }, MoreExecutors.directExecutor());
+//         });
+
+//         // Probes that come back with an unknown/expired transaction id = forgery or replay.
+//         probes.setOrphanHandler((port, detail) -> {
+//             store.record("PROBE_FORGERY", "HIGH", port.source(), detail,
+//                 "Logged", "Unsolicited or replayed probe frame", "DETECTED");
+//             if (!blocker.isMitigated(port.key())) {
+//                 blocker.stage1(port, "PROBE_FORGERY", detail, PortBlocker.STAGE1_ACTION);
+//             }
+//         });
+
+//         packetReg = notificationService.registerListener(PacketReceived.class, handler);
+//         rpcReg = rpcProviderService.registerRpcImplementations(
+//             (Toggle) this::toggle, (Unlock) this::unlock, (Reset) this::reset);
+
+//         scheduler.scheduleWithFixedDelay(guard(verifier::sweep), Settings.SWEEP_PERIOD_S,
+//             Settings.SWEEP_PERIOD_S, TimeUnit.SECONDS);
+//         scheduler.scheduleWithFixedDelay(guard(flood::resetWindow), Settings.FLOOD_WINDOW_S,
+//             Settings.FLOOD_WINDOW_S, TimeUnit.SECONDS);
+
+//         LOG.info("LINK-GUARD initialised");
 //     }
 
 //     public void close() {
-//         if (rpcReg != null) rpcReg.close();
-//         if (pktReg != null) pktReg.close();
-//         if (latencyReg != null) latencyReg.close();
-//         scheduler.shutdown();
+//         if (packetReg != null) {
+//             packetReg.close();
+//         }
+//         if (rpcReg != null) {
+//             rpcReg.close();
+//         }
+//         if (handler != null) {
+//             handler.setEnabled(false);
+//         }
+//         if (scheduler != null) {
+//             scheduler.shutdownNow();
+//         }
+//         LOG.info("LINK-GUARD closed");
+//     }
+
+//     // ------------------------------------------------------------------ RPCs
+
+//     private ListenableFuture<RpcResult<ToggleOutput>> toggle(final ToggleInput input) {
+//         boolean on = Boolean.TRUE.equals(input.getEnabled());
+//         handler.setEnabled(on);
+//         flows.persistEnabled(on);
+//         LOG.info("LINK-GUARD shield {}", on ? "ENABLED" : "DISABLED");
+//         return Futures.immediateFuture(RpcResultBuilder.success(
+//             new ToggleOutputBuilder().setStatus(on ? "enabled" : "disabled").build()).build());
+//     }
+
+//     private ListenableFuture<RpcResult<UnlockOutput>> unlock(final UnlockInput input) {
+//         Endpoint port = Endpoint.parse(input.getDeviceId() + ":" + input.getPortNumber());
+//         UnlockOutputBuilder out = new UnlockOutputBuilder();
+//         if (port == null) {
+//             out.setStatus("error").setMessage("Invalid device/port");
+//         } else if (blocker.unlock(port)) {
+//             out.setStatus("success").setMessage("Port " + port.key() + " restored (grace period active)");
+//         } else {
+//             out.setStatus("noop").setMessage("Port " + port.key() + " was not mitigated");
+//         }
+//         return Futures.immediateFuture(RpcResultBuilder.success(out.build()).build());
+//     }
+
+//     private ListenableFuture<RpcResult<ResetOutput>> reset(final ResetInput input) {
+//         blocker.releaseAll();
+//         verifier.reset();
+//         classifier.reset();
+//         store.clear();
+//         flows.resetAll();
+//         return Futures.immediateFuture(RpcResultBuilder.success(
+//             new ResetOutputBuilder().setStatus("success").setMessage("LINK-GUARD state cleared").build()).build());
+//     }
+
+//     private static Runnable guard(final Runnable r) {
+//         return () -> {
+//             try {
+//                 r.run();
+//             } catch (RuntimeException e) {
+//                 LOG.warn("LINK-GUARD periodic task failed", e);
+//             }
+//         };
 //     }
 // }
+
 
 /*
  * Copyright © 2026 PNTC and others.  All rights reserved.
@@ -124,151 +190,171 @@ package org.pntc.linkguard.impl;
 
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.MoreExecutors;
-import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.opendaylight.mdsal.binding.api.DataBroker;
 import org.opendaylight.mdsal.binding.api.NotificationService;
 import org.opendaylight.mdsal.binding.api.RpcProviderService;
-import org.opendaylight.mdsal.binding.api.WriteTransaction;
-import org.opendaylight.mdsal.common.api.LogicalDatastoreType;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.*;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.*;
+import org.opendaylight.mdsal.binding.api.RpcService;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.packet.service.rev130709.PacketReceived;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.Reset;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ResetInput;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ResetOutput;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ResetOutputBuilder;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.Toggle;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ToggleInput;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ToggleOutput;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.ToggleOutputBuilder;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.Unlock;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.UnlockInput;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.UnlockOutput;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.UnlockOutputBuilder;
 import org.opendaylight.yangtools.concepts.Registration;
-import org.opendaylight.yangtools.yang.binding.InstanceIdentifier;
-import org.opendaylight.yangtools.yang.common.Decimal64;
-import org.opendaylight.yangtools.yang.common.RpcResult;
 import org.opendaylight.yangtools.yang.common.RpcResultBuilder;
-import org.opendaylight.yangtools.yang.common.Uint32;
+import org.opendaylight.yangtools.yang.common.RpcResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class LinkGuardProvider implements Toggle {
+/**
+ * Top-level OSGi provider. Builds the component graph, registers the packet-in listener and the
+ * toggle / unlock / reset RPCs, and schedules the periodic tasks (rolling re-verification sweep,
+ * PLPC window reset).
+ */
+public class LinkGuardProvider {
     private static final Logger LOG = LoggerFactory.getLogger(LinkGuardProvider.class);
 
     private final DataBroker dataBroker;
     private final NotificationService notificationService;
     private final RpcProviderService rpcProviderService;
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private final RpcService rpcService;
 
-    private PacketHandler packetHandler;
+    private ScheduledExecutorService scheduler;
+    private Registration packetReg;
     private Registration rpcReg;
-    private Registration pktReg;
 
-    public LinkGuardProvider(DataBroker dataBroker, NotificationService notificationService,
-                              RpcProviderService rpcProviderService) {
+    private FlowManager flows;
+    private AnomalyStore store;
+    private PortClassifier classifier;
+    private FloodDetector flood;
+    private ProbeService probes;
+    private PortBlocker blocker;
+    private LinkVerifier verifier;
+    private PacketHandler handler;
+
+    public LinkGuardProvider(final DataBroker dataBroker, final NotificationService notificationService,
+                             final RpcProviderService rpcProviderService, final RpcService rpcService) {
         this.dataBroker = dataBroker;
         this.notificationService = notificationService;
         this.rpcProviderService = rpcProviderService;
+        this.rpcService = rpcService;
     }
 
     public void init() {
-        try {
-            LOG.info("LINK-GUARD: Initializing core security framework...");
-            initializeDatastore();
+        scheduler = Executors.newScheduledThreadPool(4, r -> {
+            Thread t = new Thread(r, "linkguard-worker");
+            t.setDaemon(true);
+            return t;
+        });
 
-            FlowManager flowManager = new FlowManager(dataBroker, scheduler);
-            LatencyEngine latencyEngine = new LatencyEngine(flowManager);
-            
-            this.packetHandler = new PacketHandler(flowManager, latencyEngine, scheduler);
+        flows = new FlowManager(dataBroker, rpcService, scheduler);
+        store = new AnomalyStore(flows);
+        store.loadFromDisk();
+        classifier = new PortClassifier();
+        flood = new FloodDetector();
+        probes = new ProbeService(flows, scheduler);
+        verifier = new LinkVerifier(flows, probes, classifier, scheduler, () -> handler != null && handler.isEnabled());
+        blocker = new PortBlocker(flows, store, classifier, flood, scheduler);
+        blocker.setVerifier(verifier);
+        verifier.setBlocker(blocker);
+        handler = new PacketHandler(probes, verifier, blocker, classifier, flood, flows);
 
-            this.pktReg = notificationService.registerListener(PacketReceived.class, packetHandler);
-            this.rpcReg = rpcProviderService.registerRpcImplementation(this);
-
-            LOG.info("LINK-GUARD: System fully Active and Monitoring.");
-        } catch (Exception e) {
-            LOG.error("LINK-GUARD: Error during initialization: ", e);
-        }
-    }
-
-    private void initializeDatastore() {
-        try {
-            // 1. Write Configuration Data
-            LinkguardConfig config = new LinkguardConfigBuilder().setEnabled(false).build();
-            WriteTransaction tx1 = dataBroker.newWriteOnlyTransaction();
-            tx1.put(LogicalDatastoreType.CONFIGURATION, 
-                InstanceIdentifier.create(LinkguardConfig.class).toIdentifier(), 
-                config);
-            tx1.commit();
-
-            // 2. Seed Default Ports
-            Map<PortClassificationKey, PortClassification> initialPorts = new HashMap<>();
-            for (int i = 1; i <= 7; i++) {
-                String switchId = "openflow:" + i;
-                String portKey = switchId + "-port-1";
-                PortClassificationKey key = new PortClassificationKey(portKey);
-                
-                initialPorts.put(key, new PortClassificationBuilder()
-                    .withKey(key)
-                    .setPortId(portKey)
-                    .setSwitchId(switchId)
-                    .setPortNo(Uint32.valueOf(1))
-                    .setClassification(PortClassificationType.TRUSTED)
-                    .setStatus("Active")
-                    .setLastUpdated("Just now")
-                    .build());
+        // Restore the shield state persisted by the last toggle (linkguard-config survives restarts).
+        flows.restoreEnabled(on -> {
+            if (on) {
+                handler.setEnabled(true);
+                LOG.info("LINK-GUARD shield restored to ENABLED from persisted config");
             }
+        });
 
-            // 3. Seed Default Link Baselines (Linear Topology links: s1-s2, s2-s3, etc.)
-            Map<LinkLatencyKey, LinkLatency> initialLatency = new HashMap<>();
-            for (int i = 1; i < 7; i++) {
-                String linkId = "openflow:" + i + "/2-openflow:" + (i + 1) + "/2";
-                LinkLatencyKey latencyKey = new LinkLatencyKey(linkId);
-
-                initialLatency.put(latencyKey, new LinkLatencyBuilder()
-                    .withKey(latencyKey)
-                    .setLinkId(linkId)
-                    .setCurrentRtt(Decimal64.valueOf(BigDecimal.valueOf(1.25)))
-                    .setBaselineRtt(Decimal64.valueOf(BigDecimal.valueOf(1.20)))
-                    .setThreshold(Decimal64.valueOf(BigDecimal.valueOf(5.00)))
-                    .setStatus("Normal")
-                    .setLastCheck("Just now")
-                    .build());
+        // Probes that come back with an unknown/expired transaction id = forgery or replay.
+        probes.setOrphanHandler((port, detail) -> {
+            store.record("PROBE_FORGERY", "HIGH", port.source(), detail,
+                "Logged", "Unsolicited or replayed probe frame", "DETECTED");
+            if (!blocker.isMitigated(port.key())) {
+                blocker.stage1(port, "PROBE_FORGERY", detail, PortBlocker.STAGE1_ACTION);
             }
+        });
 
-            LinkguardStatus status = new LinkguardStatusBuilder()
-                    .setPortClassification(initialPorts)
-                    .setLinkLatency(initialLatency)
-                    .build();
+        packetReg = notificationService.registerListener(PacketReceived.class, handler);
+        rpcReg = rpcProviderService.registerRpcImplementations(
+            (Toggle) this::toggle, (Unlock) this::unlock, (Reset) this::reset);
 
-            WriteTransaction tx2 = dataBroker.newWriteOnlyTransaction();
-            tx2.put(LogicalDatastoreType.OPERATIONAL, 
-                InstanceIdentifier.create(LinkguardStatus.class).toIdentifier(), 
-                status);
-            tx2.commit();
+        scheduler.scheduleWithFixedDelay(guard(verifier::sweep), Settings.SWEEP_PERIOD_S,
+            Settings.SWEEP_PERIOD_S, TimeUnit.SECONDS);
+        scheduler.scheduleWithFixedDelay(guard(flood::resetWindow), Settings.FLOOD_WINDOW_S,
+            Settings.FLOOD_WINDOW_S, TimeUnit.SECONDS);
 
-            LOG.info("LINK-GUARD: Datastore successfully initialized with default ports and latency baselines.");
-        } catch (Exception e) {
-            LOG.error("LINK-GUARD: Failed to initialize datastore", e);
-        }
-    }
-
-    @Override
-    public ListenableFuture<RpcResult<ToggleOutput>> invoke(ToggleInput input) {
-        boolean enabled = Boolean.TRUE.equals(input.getEnabled());
-        LOG.info("LINK-GUARD: Toggle RPC received. State -> {}", enabled);
-
-        LinkguardConfig config = new LinkguardConfigBuilder().setEnabled(enabled).build();
-        WriteTransaction tx = dataBroker.newWriteOnlyTransaction();
-        tx.put(LogicalDatastoreType.CONFIGURATION,
-            InstanceIdentifier.create(LinkguardConfig.class).toIdentifier(),
-            config);
-
-        return Futures.transform(tx.commit(), result -> {
-            if (packetHandler != null) {
-                packetHandler.setEnabled(enabled);
-            }
-            return RpcResultBuilder.success(new ToggleOutputBuilder().setStatus("SUCCESS").build()).build();
-        }, MoreExecutors.directExecutor());
+        LOG.info("LINK-GUARD initialised");
     }
 
     public void close() {
-        if (rpcReg != null) rpcReg.close();
-        if (pktReg != null) pktReg.close();
-        scheduler.shutdown();
+        if (packetReg != null) {
+            packetReg.close();
+        }
+        if (rpcReg != null) {
+            rpcReg.close();
+        }
+        if (handler != null) {
+            handler.setEnabled(false);
+        }
+        if (scheduler != null) {
+            scheduler.shutdownNow();
+        }
+        LOG.info("LINK-GUARD closed");
+    }
+
+    // ------------------------------------------------------------------ RPCs
+
+    private ListenableFuture<RpcResult<ToggleOutput>> toggle(final ToggleInput input) {
+        boolean on = Boolean.TRUE.equals(input.getEnabled());
+        handler.setEnabled(on);
+        flows.persistEnabled(on);
+        LOG.info("LINK-GUARD shield {}", on ? "ENABLED" : "DISABLED");
+        return Futures.immediateFuture(RpcResultBuilder.success(
+            new ToggleOutputBuilder().setStatus(on ? "enabled" : "disabled").build()).build());
+    }
+
+    private ListenableFuture<RpcResult<UnlockOutput>> unlock(final UnlockInput input) {
+        Endpoint port = Endpoint.parse(input.getDeviceId() + ":" + input.getPortNumber());
+        UnlockOutputBuilder out = new UnlockOutputBuilder();
+        if (port == null) {
+            out.setStatus("error").setMessage("Invalid device/port");
+        } else if (blocker.unlock(port)) {
+            out.setStatus("success").setMessage("Port " + port.key() + " restored (grace period active)");
+        } else {
+            out.setStatus("noop").setMessage("Port " + port.key() + " was not mitigated");
+        }
+        return Futures.immediateFuture(RpcResultBuilder.success(out.build()).build());
+    }
+
+    private ListenableFuture<RpcResult<ResetOutput>> reset(final ResetInput input) {
+        blocker.releaseAll();
+        verifier.reset();
+        classifier.reset();
+        store.clear();
+        flows.resetAll();
+        return Futures.immediateFuture(RpcResultBuilder.success(
+            new ResetOutputBuilder().setStatus("success").setMessage("LINK-GUARD state cleared").build()).build());
+    }
+
+    private static Runnable guard(final Runnable r) {
+        return () -> {
+            try {
+                r.run();
+            } catch (RuntimeException e) {
+                LOG.warn("LINK-GUARD periodic task failed", e);
+            }
+        };
     }
 }

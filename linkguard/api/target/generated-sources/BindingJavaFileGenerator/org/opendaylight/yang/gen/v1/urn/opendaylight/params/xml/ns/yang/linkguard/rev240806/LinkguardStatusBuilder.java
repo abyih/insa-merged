@@ -10,12 +10,14 @@ import java.util.Map;
 import java.util.Objects;
 import javax.annotation.processing.Generated;
 import org.eclipse.jdt.annotation.NonNull;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.DetectionLogs;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.DetectionLogsKey;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.Anomaly;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.AnomalyKey;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.LinkLatency;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.LinkLatencyKey;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.PortClassification;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.PortClassificationKey;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.QuarantinedPort;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.QuarantinedPortKey;
 import org.opendaylight.yangtools.binding.Augmentation;
 import org.opendaylight.yangtools.binding.lib.AbstractAugmentable;
 import org.opendaylight.yangtools.binding.lib.CodeHelpers;
@@ -61,9 +63,10 @@ import org.opendaylight.yangtools.binding.lib.CodeHelpers;
 @Generated("mdsal-binding-generator")
 public class LinkguardStatusBuilder {
 
-    private Map<DetectionLogsKey, DetectionLogs> _detectionLogs;
+    private Map<AnomalyKey, Anomaly> _anomaly;
     private Map<LinkLatencyKey, LinkLatency> _linkLatency;
     private Map<PortClassificationKey, PortClassification> _portClassification;
+    private Map<QuarantinedPortKey, QuarantinedPort> _quarantinedPort;
 
 
     Map<Class<? extends Augmentation<LinkguardStatus>>, Augmentation<LinkguardStatus>> augmentation = Map.of();
@@ -87,9 +90,10 @@ public class LinkguardStatusBuilder {
         if (!aug.isEmpty()) {
             this.augmentation = new HashMap<>(aug);
         }
-        this._detectionLogs = base.getDetectionLogs();
+        this._anomaly = base.getAnomaly();
         this._linkLatency = base.getLinkLatency();
         this._portClassification = base.getPortClassification();
+        this._quarantinedPort = base.getQuarantinedPort();
     }
 
 
@@ -111,12 +115,12 @@ public class LinkguardStatusBuilder {
     }
 
     /**
-     * Return current value associated with the property corresponding to {@link LinkguardStatus#getDetectionLogs()}.
+     * Return current value associated with the property corresponding to {@link LinkguardStatus#getAnomaly()}.
      *
      * @return current value
      */
-    public Map<DetectionLogsKey, DetectionLogs> getDetectionLogs() {
-        return _detectionLogs;
+    public Map<AnomalyKey, Anomaly> getAnomaly() {
+        return _anomaly;
     }
     
     /**
@@ -136,6 +140,15 @@ public class LinkguardStatusBuilder {
     public Map<PortClassificationKey, PortClassification> getPortClassification() {
         return _portClassification;
     }
+    
+    /**
+     * Return current value associated with the property corresponding to {@link LinkguardStatus#getQuarantinedPort()}.
+     *
+     * @return current value
+     */
+    public Map<QuarantinedPortKey, QuarantinedPort> getQuarantinedPort() {
+        return _quarantinedPort;
+    }
 
     /**
      * Return the specified augmentation, if it is present in this builder.
@@ -152,14 +165,14 @@ public class LinkguardStatusBuilder {
 
     
     /**
-     * Set the property corresponding to {@link LinkguardStatus#getDetectionLogs()} to the specified
+     * Set the property corresponding to {@link LinkguardStatus#getAnomaly()} to the specified
      * value.
      *
      * @param values desired value
      * @return this builder
      */
-    public LinkguardStatusBuilder setDetectionLogs(final Map<DetectionLogsKey, DetectionLogs> values) {
-        this._detectionLogs = values;
+    public LinkguardStatusBuilder setAnomaly(final Map<AnomalyKey, Anomaly> values) {
+        this._anomaly = values;
         return this;
     }
     
@@ -184,6 +197,18 @@ public class LinkguardStatusBuilder {
      */
     public LinkguardStatusBuilder setPortClassification(final Map<PortClassificationKey, PortClassification> values) {
         this._portClassification = values;
+        return this;
+    }
+    
+    /**
+     * Set the property corresponding to {@link LinkguardStatus#getQuarantinedPort()} to the specified
+     * value.
+     *
+     * @param values desired value
+     * @return this builder
+     */
+    public LinkguardStatusBuilder setQuarantinedPort(final Map<QuarantinedPortKey, QuarantinedPort> values) {
+        this._quarantinedPort = values;
         return this;
     }
     
@@ -230,20 +255,22 @@ public class LinkguardStatusBuilder {
         extends AbstractAugmentable<LinkguardStatus>
         implements LinkguardStatus {
     
-        private final Map<DetectionLogsKey, DetectionLogs> _detectionLogs;
+        private final Map<AnomalyKey, Anomaly> _anomaly;
         private final Map<LinkLatencyKey, LinkLatency> _linkLatency;
         private final Map<PortClassificationKey, PortClassification> _portClassification;
+        private final Map<QuarantinedPortKey, QuarantinedPort> _quarantinedPort;
     
         LinkguardStatusImpl(final LinkguardStatusBuilder base) {
             super(base.augmentation);
-            this._detectionLogs = CodeHelpers.emptyToNull(base.getDetectionLogs());
+            this._anomaly = CodeHelpers.emptyToNull(base.getAnomaly());
             this._linkLatency = CodeHelpers.emptyToNull(base.getLinkLatency());
             this._portClassification = CodeHelpers.emptyToNull(base.getPortClassification());
+            this._quarantinedPort = CodeHelpers.emptyToNull(base.getQuarantinedPort());
         }
     
         @Override
-        public Map<DetectionLogsKey, DetectionLogs> getDetectionLogs() {
-            return _detectionLogs;
+        public Map<AnomalyKey, Anomaly> getAnomaly() {
+            return _anomaly;
         }
         
         @Override
@@ -255,7 +282,13 @@ public class LinkguardStatusBuilder {
         public Map<PortClassificationKey, PortClassification> getPortClassification() {
             return _portClassification;
         }
+        
+        @Override
+        public Map<QuarantinedPortKey, QuarantinedPort> getQuarantinedPort() {
+            return _quarantinedPort;
+        }
     
+        
         
         
     
