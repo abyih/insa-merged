@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0">
+
+    <reference id="dataBroker" interface="org.opendaylight.mdsal.binding.api.DataBroker" />
+    <reference id="notificationService" interface="org.opendaylight.mdsal.binding.api.NotificationService" />
+    <reference id="rpcProviderService" interface="org.opendaylight.mdsal.binding.api.RpcProviderService" />
+    <!-- NEW: used to call the OpenFlow plugin's TransmitPacket RPC (real probe injection) -->
+    <reference id="rpcService" interface="org.opendaylight.mdsal.binding.api.RpcService" />
+
+    <bean id="provider" class="org.pntc.linkguard.impl.LinkGuardProvider" init-method="init" destroy-method="close">
+        <argument ref="dataBroker" />
+        <argument ref="notificationService" />
+        <argument ref="rpcProviderService" />
+        <argument ref="rpcService" />
+    </bean>
+
+</blueprint>

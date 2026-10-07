@@ -3,53 +3,68 @@ module linkguard {
     namespace "urn:opendaylight:params:xml:ns:yang:linkguard";
     prefix "linkguard";
 
-    revision "2024-08-06" { description "Final stable revision"; }
-
-   typedef attack-type {
-        type enumeration {
-            enum TOPOLOGY_POISONING;
-            enum SIGNATURE_FORGERY;
-            enum FLOODING;
-            enum PERMANENT_LOCKOUT;
-            enum MANUAL_ROLLBACK;
-            enum INJECTION;
-            enum RELAY;
-        }
-    }
-
-    typedef port-classification-type {
-        type enumeration {
-            enum TRUSTED;
-            enum UNTRUSTED;
-            enum SWITCH_FACING;
-            enum HOST_FACING;
-            enum RECOVERING;
-        }
+    revision "2024-08-06" {
+        description "LINK-GUARD ODL: active probing, staged mitigation, self-healing.";
     }
 
     container linkguard-config {
-        leaf enabled { type boolean; default false; }
+        leaf enabled {
+            type boolean;
+            default false;
+        }
+    }
+
+    rpc toggle {
+        input {
+            leaf enabled { type boolean; }
+        }
+        output {
+            leaf status { type string; }
+        }
+    }
+
+    /* Administrative override (manual rollback) of a mitigated port. */
+    rpc unlock {
+        input {
+            leaf device-id { type string; mandatory true; }   /* e.g. openflow:1 */
+            leaf port-number { type uint32; mandatory true; } /* e.g. 2 */
+        }
+        output {
+            leaf status { type string; }
+            leaf message { type string; }
+        }
+    }
+
+    /* Clears baselines, anomaly log and releases every mitigation. */
+    rpc reset {
+        output {
+            leaf status { type string; }
+            leaf message { type string; }
+        }
     }
 
     container linkguard-status {
         config false;
-        
-        list detection-logs {
-            key "port-id";
-            leaf port-id { type string; }
-            leaf attack-type { type attack-type; }
+
+        list anomaly {
+            key "id";
+            leaf id { type string; }
+            leaf attack-type { type string; }
             leaf severity { type string; }
+            leaf source { type string; }            /* openflow:1-port-2 */
             leaf details { type string; }
-            leaf source { type string; }
-            leaf timestamp { type string; }
+            leaf mitigation-action { type string; }
+            leaf mitigation-reason { type string; }
+            leaf mitigation-state { type string; }
+            leaf detected-at { type string; }
         }
 
         list port-classification {
             key "port-id";
-            leaf port-id { type string; }
+            leaf port-id { type string; }           /* openflow:1:2 */
             leaf switch-id { type string; }
-            leaf port-no { type uint32; }
-            leaf classification { type port-classification-type; }
+            leaf port-no { type string; }
+            leaf classification { type string; }    /* TRUSTED, UNTRUSTED, MONITORED, HOST_FACING, UNKNOWN */
             leaf status { type string; }
             leaf last-updated { type string; }
         }
@@ -57,16 +72,21 @@ module linkguard {
         list link-latency {
             key "link-id";
             leaf link-id { type string; }
-            leaf current-rtt { type decimal64 { fraction-digits 2; } }
-            leaf baseline-rtt { type decimal64 { fraction-digits 2; } }
-            leaf threshold { type decimal64 { fraction-digits 2; } }
+            leaf current-rtt-us { type uint64; }
+            leaf baseline-rtt-us { type uint64; }
+            leaf threshold-us { type uint64; }
+            leaf deviation-us { type int64; }
             leaf status { type string; }
             leaf last-check { type string; }
         }
-    }
 
-    rpc toggle {
-        input { leaf enabled { type boolean; } }
-        output { leaf status { type string; } }
+        list quarantined-port {
+            key "port-id";
+            leaf port-id { type string; }
+            leaf attempts { type uint16; }
+            leaf state { type string; }             /* COOLDOWN, LOCKED */
+            leaf next-attempt-at { type string; }
+        }
     }
 }
+

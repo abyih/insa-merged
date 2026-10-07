@@ -1,0 +1,40 @@
+services:
+  sdn-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: insa-sdn-dashboard:latest
+    container_name: insa-sdn-dashboard
+    restart: unless-stopped
+    # On Linux servers, host networking provides:
+    # 1. Direct access to ONOS Docker container published on localhost:8181
+    # 2. Direct network access to DevStack (192.168.122.156) & Mininet (192.168.122.88) on virbr0
+    # 3. Direct binding of all service ports to host interfaces without NAT overhead
+    network_mode: "host"
+    environment:
+      - PORT=5000
+      - ONOS_URL=http://localhost:8181
+      - ONOS_USERNAME=onos
+      - ONOS_PASSWORD=rocks
+      - ONOS_CONTAINER_NAME=onos
+      - KEYSTONE_URL=http://192.168.122.156/identity/v3
+      - MININET_HOST=192.168.122.88
+      - INTENT_SERVICE_HOST=0.0.0.0
+      - INTENT_SERVICE_PORT=5005
+      - VITE_HOST=0.0.0.0
+    volumes:
+      # Persist SQLite database (user accounts, created slices, persistent state)
+      - ./users.db:/app/users.db
+      # Mount Docker socket so server.js and server-onos.js can inspect the host's ONOS container
+      - /var/run/docker.sock:/var/run/docker.sock
+    # If running in environments where host networking is not supported (macOS/Windows Docker Desktop),
+    # change network_mode to bridge, uncomment ports and extra_hosts below, and set ONOS_URL=http://host.docker.internal:8181:
+    # ports:
+    #   - "5173:5173"
+    #   - "5000:5000"
+    #   - "5001:5001"
+    #   - "5002:5002"
+    #   - "5003:5003"
+    #   - "5005:5005"
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"

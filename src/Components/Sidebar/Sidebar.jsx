@@ -16,7 +16,6 @@ const links = [
 	{ title: "↳ ODL Slicing", link: "/slicing/odl" },
 	{ title: "↳ Verification & Tests", link: "/slicing/verification" },
 	{ title: "Cloud", link: "/cloud" },
-	{ title: "VM Topology Map", link: "/vm-topology" },
 	{ title: "Stats", link: "/stats" },
 	{ title: "Api-Tester", link: "/api-tester" },
 	{ title: "Yangman", link: "/yangui" },

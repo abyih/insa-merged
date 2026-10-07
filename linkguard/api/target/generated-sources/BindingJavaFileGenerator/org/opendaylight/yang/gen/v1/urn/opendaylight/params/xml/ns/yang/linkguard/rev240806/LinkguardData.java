@@ -16,52 +16,81 @@ import org.opendaylight.yangtools.binding.DataRoot;
  *   prefix linkguard;
  *   revision 2024-08-06 {
  *   }
- *   typedef attack-type {
- *     type enumeration {
- *       enum TOPOLOGY_POISONING;
- *       enum SIGNATURE_FORGERY;
- *       enum FLOODING;
- *       enum PERMANENT_LOCKOUT;
- *       enum MANUAL_ROLLBACK;
- *       enum INJECTION;
- *       enum RELAY;
- *     }
- *   }
- *   typedef port-classification-type {
- *     type enumeration {
- *       enum TRUSTED;
- *       enum UNTRUSTED;
- *       enum SWITCH_FACING;
- *       enum HOST_FACING;
- *       enum RECOVERING;
- *     }
- *   }
  *   container linkguard-config {
  *     leaf enabled {
  *       type boolean;
  *       default false;
  *     }
  *   }
+ *   rpc toggle {
+ *     input input {
+ *       leaf enabled {
+ *         type boolean;
+ *       }
+ *     }
+ *     output output {
+ *       leaf status {
+ *         type string;
+ *       }
+ *     }
+ *   }
+ *   rpc unlock {
+ *     input input {
+ *       leaf device-id {
+ *         type string;
+ *       }
+ *       leaf port-number {
+ *         type uint32;
+ *       }
+ *     }
+ *     output output {
+ *       leaf status {
+ *         type string;
+ *       }
+ *       leaf message {
+ *         type string;
+ *       }
+ *     }
+ *   }
+ *   rpc reset {
+ *     output output {
+ *       leaf status {
+ *         type string;
+ *       }
+ *       leaf message {
+ *         type string;
+ *       }
+ *     }
+ *   }
  *   container linkguard-status {
  *     config false;
- *     list detection-logs {
- *       key port-id;
- *       leaf port-id {
+ *     list anomaly {
+ *       key id;
+ *       leaf id {
  *         type string;
  *       }
  *       leaf attack-type {
- *         type attack-type;
- *       }
- *       leaf severity {
  *         type string;
  *       }
- *       leaf details {
+ *       leaf severity {
  *         type string;
  *       }
  *       leaf source {
  *         type string;
  *       }
- *       leaf timestamp {
+ *       leaf details {
+ *         type string;
+ *       }
+ *       leaf mitigation-action {
+ *         type string;
+ *       }
+ *       leaf mitigation-reason {
+ *         type string;
+ *       }
+ *       leaf mitigation-state {
+ *         type string;
+ *       }
+ *       leaf detected-at {
  *         type string;
  *       }
  *     }
@@ -74,10 +103,10 @@ import org.opendaylight.yangtools.binding.DataRoot;
  *         type string;
  *       }
  *       leaf port-no {
- *         type uint32;
+ *         type string;
  *       }
  *       leaf classification {
- *         type port-classification-type;
+ *         type string;
  *       }
  *       leaf status {
  *         type string;
@@ -91,20 +120,17 @@ import org.opendaylight.yangtools.binding.DataRoot;
  *       leaf link-id {
  *         type string;
  *       }
- *       leaf current-rtt {
- *         type decimal64 {
- *           fraction-digits 2;
- *         }
+ *       leaf current-rtt-us {
+ *         type uint64;
  *       }
- *       leaf baseline-rtt {
- *         type decimal64 {
- *           fraction-digits 2;
- *         }
+ *       leaf baseline-rtt-us {
+ *         type uint64;
  *       }
- *       leaf threshold {
- *         type decimal64 {
- *           fraction-digits 2;
- *         }
+ *       leaf threshold-us {
+ *         type uint64;
+ *       }
+ *       leaf deviation-us {
+ *         type int64;
  *       }
  *       leaf status {
  *         type string;
@@ -113,15 +139,18 @@ import org.opendaylight.yangtools.binding.DataRoot;
  *         type string;
  *       }
  *     }
- *   }
- *   rpc toggle {
- *     input input {
- *       leaf enabled {
- *         type boolean;
+ *     list quarantined-port {
+ *       key port-id;
+ *       leaf port-id {
+ *         type string;
  *       }
- *     }
- *     output output {
- *       leaf status {
+ *       leaf attempts {
+ *         type uint16;
+ *       }
+ *       leaf state {
+ *         type string;
+ *       }
+ *       leaf next-attempt-at {
  *         type string;
  *       }
  *     }

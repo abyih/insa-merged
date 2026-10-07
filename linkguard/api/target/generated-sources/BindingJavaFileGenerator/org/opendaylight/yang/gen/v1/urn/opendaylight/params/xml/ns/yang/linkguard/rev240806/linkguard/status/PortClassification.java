@@ -10,13 +10,11 @@ import java.util.Objects;
 import javax.annotation.processing.Generated;
 import org.eclipse.jdt.annotation.NonNull;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.LinkguardStatus;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.PortClassificationType;
 import org.opendaylight.yang.svc.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.YangModuleInfoImpl;
 import org.opendaylight.yangtools.binding.ChildOf;
 import org.opendaylight.yangtools.binding.EntryObject;
 import org.opendaylight.yangtools.binding.lib.CodeHelpers;
 import org.opendaylight.yangtools.yang.common.QName;
-import org.opendaylight.yangtools.yang.common.Uint32;
 
 /**
  *
@@ -32,10 +30,10 @@ import org.opendaylight.yangtools.yang.common.Uint32;
  *     type string;
  *   }
  *   leaf port-no {
- *     type uint32;
+ *     type string;
  *   }
  *   leaf classification {
- *     type port-classification-type;
+ *     type string;
  *   }
  *   leaf status {
  *     type string;
@@ -109,12 +107,12 @@ public interface PortClassification
         }
         final var other = CodeHelpers.checkCast(org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.PortClassification.class, obj);
         return other != null
-            && Objects.equals(thisObj.getPortNo(), other.getPortNo())
+            && Objects.equals(thisObj.getClassification(), other.getClassification())
             && Objects.equals(thisObj.getLastUpdated(), other.getLastUpdated())
             && Objects.equals(thisObj.getPortId(), other.getPortId())
+            && Objects.equals(thisObj.getPortNo(), other.getPortNo())
             && Objects.equals(thisObj.getStatus(), other.getStatus())
             && Objects.equals(thisObj.getSwitchId(), other.getSwitchId())
-            && Objects.equals(thisObj.getClassification(), other.getClassification())
             && thisObj.augmentations().equals(other.augmentations());
     }
     
@@ -183,38 +181,38 @@ public interface PortClassification
     /**
      * Return portNo, or {@code null} if it is not present.
      *
-     * @return {@code Uint32} portNo, or {@code null} if it is not present.
+     * @return {@code String} portNo, or {@code null} if it is not present.
      *
      */
-    Uint32 getPortNo();
+    String getPortNo();
     
     /**
      * Return portNo, guaranteed to be non-null.
      *
-     * @return {@code Uint32} portNo, guaranteed to be non-null.
+     * @return {@code String} portNo, guaranteed to be non-null.
      * @throws NoSuchElementException if portNo is not present
      *
      */
-    default @NonNull Uint32 requirePortNo() {
+    default @NonNull String requirePortNo() {
         return CodeHelpers.require(getPortNo(), "portno");
     }
     
     /**
      * Return classification, or {@code null} if it is not present.
      *
-     * @return {@code PortClassificationType} classification, or {@code null} if it is not present.
+     * @return {@code String} classification, or {@code null} if it is not present.
      *
      */
-    PortClassificationType getClassification();
+    String getClassification();
     
     /**
      * Return classification, guaranteed to be non-null.
      *
-     * @return {@code PortClassificationType} classification, guaranteed to be non-null.
+     * @return {@code String} classification, guaranteed to be non-null.
      * @throws NoSuchElementException if classification is not present
      *
      */
-    default @NonNull PortClassificationType requireClassification() {
+    default @NonNull String requireClassification() {
         return CodeHelpers.require(getClassification(), "classification");
     }
     

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <bom serialNumber="urn:uuid:cf95602f-95a9-3f49-9fbc-e819e7704023" version="1" xmlns="http://cyclonedx.org/schema/bom/1.6">
   <metadata>
-    <timestamp>2026-09-15T19:50:01Z</timestamp>
+    <timestamp>2026-09-28T19:40:58Z</timestamp>
     <lifecycles>
       <lifecycle>
         <phase>build</phase>
@@ -72,14 +72,14 @@
       <description>Bundle parent (felix-based)</description>
       <scope>required</scope>
       <hashes>
-        <hash alg="MD5">ecb5b12b8e5392569b591cd7bd29ba9f</hash>
-        <hash alg="SHA-1">263a3e691be2ba036b22e1c84bdc3ff47dbf8da4</hash>
-        <hash alg="SHA-256">06ce76a11cf94b319eda90aebfcab8b9371e8302d8e2ba0388a4f3106d4bdc9f</hash>
-        <hash alg="SHA-512">4e3e649df2bfd20451d9a8be8e677f4ca195ffad9b41ffb224bb17c7bf0cd77b52de79620b0af7d72cf028c6980a6aa0a665f1ce4f04dbc52f2bc78b19454444</hash>
-        <hash alg="SHA-384">9b9a76d2df9d6afa1167cfed63538f6d99c88e46fc1aab651efad438f2fce3a63aa05b5eaddb4cb83750fe8d5639d981</hash>
-        <hash alg="SHA3-384">ac81c68964fef5a6ec49a2df43d3cb28da4d2333d018c198f41eb9a37038ef1cb4725883b6b488f84096e081538cc113</hash>
-        <hash alg="SHA3-256">bdd46fed7e51d97b39f5f858c59fc6859d2ff48ef8c5bcd55a4d29e685822945</hash>
-        <hash alg="SHA3-512">71214af97f24fc2cb03ed6cdad46faca825004ad3d87caa84ab74ef0b48bc8e348da7733abe1e43c3fbb52912203bbe391d470ec49a0f50ef852d3cc197f388e</hash>
+        <hash alg="MD5">0142786d9aac8a83ba41edf2e185b5bd</hash>
+        <hash alg="SHA-1">f363c2e9dc75c28bc1b30ea66c1c90e907e4ac78</hash>
+        <hash alg="SHA-256">f7c04c3b89c90635d3088df6df9a14ad4475249b9a592295e39ae223d367d356</hash>
+        <hash alg="SHA-512">6c2d863642ef2197e3c9ab0cff583952b72f4298624cf7eab02d551989079a93898d60b33f717f9a9e85e5adaa5165a18280058d6f47ac84a66fe604eaaba916</hash>
+        <hash alg="SHA-384">0f15ee035ce67270cde9a1f6c4517d8501cee695ff7457cddc1bbe89134fc5e76eab9acfbfec0266b6f6ba00f997b10f</hash>
+        <hash alg="SHA3-384">9c6ab3768cf0f1602b35ee63de77ad5f864901492211327631316d34496e14e4908e3bc1e70acc476927cc0f68c5bd1f</hash>
+        <hash alg="SHA3-256">b947ee9cd6799d600cbc87d474b18a811c80e1161f5f8be970b35098de017a3b</hash>
+        <hash alg="SHA3-512">b4ea64f17e13fbae77c3bc9c579ba82115ef747133f387e1ad2bac063e96da31d7bdc17786afedffad100a74ac443f79e5476f81ee99f9a9db2679717ea5baab</hash>
       </hashes>
       <licenses>
         <license>
@@ -102,409 +102,6 @@
         </reference>
         <reference type="vcs">
           <url>https://wiki.opendaylight.org/display/ODL/MD-SAL/linkguard-api</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/org.opendaylight.mdsal.model/ietf-topology@2013.10.21.27.2?type=jar">
-      <publisher>OpenDaylight</publisher>
-      <group>org.opendaylight.mdsal.model</group>
-      <name>ietf-topology</name>
-      <version>2013.10.21.27.2</version>
-      <description>ietf-topology</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">345a259944116bf9a168819835cf1a33</hash>
-        <hash alg="SHA-1">e98c3de104aa528dc4b0a7dded00b89f0ba1818c</hash>
-        <hash alg="SHA-256">004def1c3d0b43dbe91b3f9eff1352ccb53a748e7ccaed7e3fd2c762ed865f49</hash>
-        <hash alg="SHA-512">05ca282685bf21b150f4e53510304f82fdccb14447a35d0cf035e5b7ed651a9146ed83083397acc072dd62237e316c5412702f040036e3194cf60b6f71344324</hash>
-        <hash alg="SHA-384">f42848e6ff62acbdb6c2a5e77406ce4a395b41c363219ae0553160b52c0a2b8b31589f70f012c738f93d0cbf25925758</hash>
-        <hash alg="SHA3-384">d8e7159370315e4833ef232dd5643415067f564c371c04a36a5eb53a4e538a0065e6ae874d895ceeb6cd246b5366f1cb</hash>
-        <hash alg="SHA3-256">f0b5c42a43bf75b2f3e34298a39e17bd82989ba69b3cdd2ec8b3e3b3d69ed31e</hash>
-        <hash alg="SHA3-512">7dc5500b11914118c2e4ab33eaa1bab5d3fb88ddd5383cea15d60d3bb2be6d33fa6a67649ad39b1b736266fa9773d536957945691c3ba51e40819ae8e0b40b72</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>EPL-1.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/org.opendaylight.mdsal.model/ietf-topology@2013.10.21.27.2?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://nexus.opendaylight.org/content/sites/site//org.opendaylight.mdsal.model/latest/ietf-topology/odlparent/bundle-parent/bundle-parent/binding-bundle-parent/binding-parent/ietf-topology/</url>
-        </reference>
-        <reference type="build-system">
-          <url>https://jenkins.opendaylight.org/releng/</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://nexus.opendaylight.org/content/repositories/opendaylight.release/</url>
-        </reference>
-        <reference type="issue-tracker">
-          <url>https://jira.opendaylight.org/</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://wiki.opendaylight.org/display/ODL/MD-SAL/ietf-topology</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/org.opendaylight.ietf.model/rfc6991-ietf-inet-types@1.0.2?type=jar">
-      <publisher>OpenDaylight</publisher>
-      <group>org.opendaylight.ietf.model</group>
-      <name>rfc6991-ietf-inet-types</name>
-      <version>1.0.2</version>
-      <description>rfc6991-ietf-inet-types</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">ec87de72a66fdd53fa2b54d55253b70a</hash>
-        <hash alg="SHA-1">42b60393f4c9dba3ee8f8d180756099cbd1b2f3d</hash>
-        <hash alg="SHA-256">d38357f390eddfe996c3f447bab014a1d2d747706eb4aea26a72e15a41f38990</hash>
-        <hash alg="SHA-512">89a9615d1df2eec054e33712aaf003ad339e902c9327a2d92962bddda2604c95778b4e7535bc537cb9491a4ea31dbc9857274348c417da948cf01d87e720af00</hash>
-        <hash alg="SHA-384">5deec4de53cde53071a0a558303f6fc6709a97e6e6ad70639f6ae71c69dc51479fffb77d56a712753dd31fe14c00c4b2</hash>
-        <hash alg="SHA3-384">cd805a04ac5584c850119a008fab8c52a2622256f922301b155d0d4aba00aea2d7a68e7b5f8b0bacdf98e14494b5eefd</hash>
-        <hash alg="SHA3-256">146727839ee6d335c6ff15abce10aecae3d62a7fa5bd202e1b6a3340b27361a3</hash>
-        <hash alg="SHA3-512">7652f3b3248ade11c5c276d752864beed0f0ac3ec918ffb892ba8ed0030869ff9c2721a8a2a2bc010a27fc802af60dd1a8406d8778aa920ebfe4b5b898064b5e</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>EPL-1.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/org.opendaylight.ietf.model/rfc6991-ietf-inet-types@1.0.2?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://nexus.opendaylight.org/content/sites/site//org.opendaylight.ietf.model/latest/rfc6991-ietf-inet-types/odlparent/bundle-parent/bundle-parent/binding-bundle-parent/bundle-parent/rfc6991-ietf-inet-types/</url>
-        </reference>
-        <reference type="build-system">
-          <url>https://jenkins.opendaylight.org/releng/</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://nexus.opendaylight.org/content/repositories/opendaylight.release/</url>
-        </reference>
-        <reference type="issue-tracker">
-          <url>https://jira.opendaylight.org/</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://lf-opendaylight.atlassian.net/wiki/spaces/ODL/pages/282525740/IETF+Liaison+Project/rfc6991-ietf-inet-types</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/org.opendaylight.ietf/ietf-type-util@1.0.2?type=jar">
-      <publisher>OpenDaylight</publisher>
-      <group>org.opendaylight.ietf</group>
-      <name>ietf-type-util</name>
-      <version>1.0.2</version>
-      <description>Utilities to support ietf-{inet,yang}-types YANG modules</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">1838b7f508cc9aa599427b0704e1ed53</hash>
-        <hash alg="SHA-1">c81c0049ce30012133d86b584349c243141314d8</hash>
-        <hash alg="SHA-256">46094250570dde32ff0d19f24f837dbd949ab64fa6aed75a6e5350de4f17c59d</hash>
-        <hash alg="SHA-512">3a24d22a92f0257c58908a7e1713d05b07ee4d79833d957a3109a1b6894f0110118e1a0d95afae80d6a56b1e07ff07d2175a9c4c19daed5ee0596f17966c521c</hash>
-        <hash alg="SHA-384">c61f0037a7f3b56b78b27588c9610f37bcf1541850e2ee587f077fd15d872fa6402535e5ae711989b8f3e9f4d3923c77</hash>
-        <hash alg="SHA3-384">04435ab6543eddcf015eea668dc987fbb74223c1955d4e6161c2da7600925d84ac3f737a17bb4053db318a802ce52bbb</hash>
-        <hash alg="SHA3-256">d970cef6318c84307972ed4d4a5f3e96df71dd5a5e257ca51d836887531e1bfa</hash>
-        <hash alg="SHA3-512">4a2b3e3a37d7d4cac98f7693dea605d3e0cf343c0ba50d283e12b7bd89bdf0d38a2c4bd9816fb096e89c9e429ecfdfabaa197fbf5c9e2d7b649bbef606e35d8a</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>EPL-1.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/org.opendaylight.ietf/ietf-type-util@1.0.2?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://nexus.opendaylight.org/content/sites/site//org.opendaylight.ietf/latest/ietf-type-util/odlparent/bnd-parent/bnd-parent/bnd-parent/ietf-type-util/</url>
-        </reference>
-        <reference type="build-system">
-          <url>https://jenkins.opendaylight.org/releng/</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://nexus.opendaylight.org/content/repositories/opendaylight.release/</url>
-        </reference>
-        <reference type="issue-tracker">
-          <url>https://jira.opendaylight.org/</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://lf-opendaylight.atlassian.net/wiki/spaces/ODL/pages/282525740/IETF+Liaison+Project/ietf-type-util</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/org.opendaylight.ietf.model/rfc6991-ietf-yang-types@1.0.2?type=jar">
-      <publisher>OpenDaylight</publisher>
-      <group>org.opendaylight.ietf.model</group>
-      <name>rfc6991-ietf-yang-types</name>
-      <version>1.0.2</version>
-      <description>rfc6991-ietf-yang-types</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">6263a9488072d22a3061e4bc3dc5b663</hash>
-        <hash alg="SHA-1">71b75028e97c1bffa2d73c62b7f9b29df70befaf</hash>
-        <hash alg="SHA-256">e46f3a7400657a4899c4530969c68e761b5a1efeeeeeb819a10b861c72703459</hash>
-        <hash alg="SHA-512">34e08955c2050b3e697f558e24b187870ecff7e19e9b37611811cc1bcb10a676258e7f0565f2148d55313fa60e34d008d15f6488f6ee9f28a36ab14ba7ecb78a</hash>
-        <hash alg="SHA-384">f3d250bb995291d14b70a43a9c88c4c173ed821f42ac2e2dc1d838c41fab176b81325d2a285f85eb57c9c2fbcf50d628</hash>
-        <hash alg="SHA3-384">bc1466b825531235a544c4d1e38f341f6432fb23b9deafa4e14b49dfd07af17528322f161c106c5ffa43eebfbf30b8e2</hash>
-        <hash alg="SHA3-256">9b1360f6bb2b6e390a48e710adaeb240c58da43f73f3656bdfd3186b52d501ad</hash>
-        <hash alg="SHA3-512">4ad1293716055c2ad4ea6b2975be731929e445d6321d322704c157bef9237c8af0a9963a481601f208c7069538b6cb29b74ddc5ce3142ddfd81f38416d4f4da9</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>EPL-1.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/org.opendaylight.ietf.model/rfc6991-ietf-yang-types@1.0.2?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://nexus.opendaylight.org/content/sites/site//org.opendaylight.ietf.model/latest/rfc6991-ietf-yang-types/odlparent/bundle-parent/bundle-parent/binding-bundle-parent/bundle-parent/rfc6991-ietf-yang-types/</url>
-        </reference>
-        <reference type="build-system">
-          <url>https://jenkins.opendaylight.org/releng/</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://nexus.opendaylight.org/content/repositories/opendaylight.release/</url>
-        </reference>
-        <reference type="issue-tracker">
-          <url>https://jira.opendaylight.org/</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://lf-opendaylight.atlassian.net/wiki/spaces/ODL/pages/282525740/IETF+Liaison+Project/rfc6991-ietf-yang-types</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar">
-      <group>com.google.guava</group>
-      <name>guava</name>
-      <version>33.5.0-jre</version>
-      <description>Guava is a suite of core and expanded libraries that include
-    utility classes, Google's collections, I/O classes, and
-    much more.</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">d9fbf39a41a5bab891348f07668e18c5</hash>
-        <hash alg="SHA-1">8699de25f2f979108d6c1b804a7ba38cda1116bc</hash>
-        <hash alg="SHA-256">1e301f0c52ac248b0b14fdc3d12283c77252d4d6f48521d572e7d8c4c2cc4ac7</hash>
-        <hash alg="SHA-512">994a4dbcbd8e528ad3b4a7acf49b631a40dcebb03d9a8f5e1d3b74351f805f77774e9a19f7233e42036cb415b7838710f207ac1e18335e4a219b7f99ea22a44f</hash>
-        <hash alg="SHA-384">9dabff6e543ead881b20d38a533e9151aaa83999239cf0ace3e712cf678e7976c3a50d79e3f3c57afc05a3b9ff14ad90</hash>
-        <hash alg="SHA3-384">9f65d4d942113facb2eb25229c1530b79dd3b8994574034b8d4a1c2b39ed8ee5bb4d415ec690d3d87cee0d8cb2283564</hash>
-        <hash alg="SHA3-256">fedafab2279bdf6eff66314fc61b056e92312695678e66dc1e25fe1d18af5a36</hash>
-        <hash alg="SHA3-512">e64f3c49f9030358554bb0b8abdff729394988f1e3247b05a86302014eeff4a2855acf46d9bf1c683cbecc33a24173a20a103d3c82c94f8cabd6676a01b40fb6</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>Apache-2.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://github.com/google/guava</url>
-        </reference>
-        <reference type="build-system">
-          <url>https://github.com/google/guava/actions</url>
-        </reference>
-        <reference type="issue-tracker">
-          <url>https://github.com/google/guava/issues</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://github.com/google/guava/guava</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/com.google.guava/failureaccess@1.0.3?type=jar">
-      <group>com.google.guava</group>
-      <name>failureaccess</name>
-      <version>1.0.3</version>
-      <description>Contains
-    com.google.common.util.concurrent.internal.InternalFutureFailureAccess and
-    InternalFutures. Most users will never need to use this artifact. Its
-    classes are conceptually a part of Guava, but they're in this separate
-    artifact so that Android libraries can use them without pulling in all of
-    Guava (just as they can use ListenableFuture by depending on the
-    listenablefuture artifact).</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">29a782e90f6b37218b18bb880d2a8f4a</hash>
-        <hash alg="SHA-1">aeaffd00d57023a2c947393ed251f0354f0985fc</hash>
-        <hash alg="SHA-256">cbfc3906b19b8f55dd7cfd6dfe0aa4532e834250d7f080bd8d211a3e246b59cb</hash>
-        <hash alg="SHA-512">72be228e7805da5623e42bf024ded7d9147023c66b22f4dbd04ac6898201af46ee82e1f92ea51eb0595f1b49151c4b8ecb862653d4906c17609c42544ee97abf</hash>
-        <hash alg="SHA-384">9dd1a2a08efda311604992d3e7cee64873bc8c64de3b423b1b3a3dcc1f7f0810bb03901fbfe39a5f835accb0646f4ad8</hash>
-        <hash alg="SHA3-384">ffd67766c165ee77e96824e06de2c19864a6e61f785b2085eb825f308f173d71f2555559d90d910f33f3367378ace0e3</hash>
-        <hash alg="SHA3-256">08a77b528a72ca412b36e4004692705ebfd75cfb4897c88632d367d08a34b09f</hash>
-        <hash alg="SHA3-512">7cba6c266babbe8272f029eea6e2cbddadee96eb1a16916a6eb2441a55837867ce717385d4388735fd83f2f6555931077c0ebda011a1ee9a37ac38c8c0c43a65</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>Apache-2.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/com.google.guava/failureaccess@1.0.3?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://github.com/google/guava/failureaccess</url>
-        </reference>
-        <reference type="build-system">
-          <url>https://github.com/google/guava/actions</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </reference>
-        <reference type="issue-tracker">
-          <url>https://github.com/google/guava/issues</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://github.com/google/guava/failureaccess</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/com.google.guava/listenablefuture@9999.0-empty-to-avoid-conflict-with-guava?type=jar">
-      <group>com.google.guava</group>
-      <name>listenablefuture</name>
-      <version>9999.0-empty-to-avoid-conflict-with-guava</version>
-      <description>An empty artifact that Guava depends on to signal that it is providing
-    ListenableFuture -- but is also available in a second "version" that
-    contains com.google.common.util.concurrent.ListenableFuture class, without
-    any other Guava classes. The idea is:
-
-    - If users want only ListenableFuture, they depend on listenablefuture-1.0.
-
-    - If users want all of Guava, they depend on guava, which, as of Guava
-    27.0, depends on
-    listenablefuture-9999.0-empty-to-avoid-conflict-with-guava. The 9999.0-...
-    version number is enough for some build systems (notably, Gradle) to select
-    that empty artifact over the "real" listenablefuture-1.0 -- avoiding a
-    conflict with the copy of ListenableFuture in guava itself. If users are
-    using an older version of Guava or a build system other than Gradle, they
-    may see class conflicts. If so, they can solve them by manually excluding
-    the listenablefuture artifact or manually forcing their build systems to
-    use 9999.0-....</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">d094c22570d65e132c19cea5d352e381</hash>
-        <hash alg="SHA-1">b421526c5f297295adef1c886e5246c39d4ac629</hash>
-        <hash alg="SHA-256">b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99</hash>
-        <hash alg="SHA-512">c5987a979174cbacae2e78b319f080420cc71bcdbcf7893745731eeb93c23ed13bff8d4599441f373f3a246023d33df03e882de3015ee932a74a774afdd0782f</hash>
-        <hash alg="SHA-384">caff9b74079f95832ca7f6029346b34b606051cc8c5a4389fac263511d277ada0c55f28b0d43011055b268c6eb7184d5</hash>
-        <hash alg="SHA3-384">e939f08df0545847ea0d3e4b04a114b08499ad069ba8ec9461d1779f87a56e0c37273630a0f4c14e78c348d3ac7eb97f</hash>
-        <hash alg="SHA3-256">1f0a8b1177773b3a8ace839df5eed63cbf56b24a38714898a6e4ed065c42559f</hash>
-        <hash alg="SHA3-512">6b495ecc2a18b17365cb08d124a0da47f04bcdde81927b5245edf3edd8e498c3c3fb92ce6a4127f660bac851bb1d3e4510e5c20d03be47ce99dc296d360db285</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>Apache-2.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/com.google.guava/listenablefuture@9999.0-empty-to-avoid-conflict-with-guava?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://github.com/google/guava/listenablefuture</url>
-        </reference>
-        <reference type="build-system">
-          <url>https://travis-ci.org/google/guava</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </reference>
-        <reference type="issue-tracker">
-          <url>https://github.com/google/guava/issues</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://github.com/google/guava/listenablefuture</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/org.jspecify/jspecify@1.0.0?type=jar">
-      <group>org.jspecify</group>
-      <name>jspecify</name>
-      <version>1.0.0</version>
-      <description>An artifact of well-named and well-specified annotations to power static analysis checks</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">9133aba420d0ca3b001dbb6ae9992cf6</hash>
-        <hash alg="SHA-1">7425a601c1c7ec76645a78d22b8c6a627edee507</hash>
-        <hash alg="SHA-256">1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab</hash>
-        <hash alg="SHA-512">efded31ef5b342f09422935076e599789076431e93a746685c0607e7de5592719ba6aacde0be670b3f064d1e85630d58d5bce6b34aed2a288fdb34f745efb7bc</hash>
-        <hash alg="SHA-384">814f860e5a44ead6c457676841eef471a8b87be31b84c60a8a4477a18a9cbcb6e3c2ae700969d5c5e52309d961e0537a</hash>
-        <hash alg="SHA3-384">c8844e5b71e5ecfbb7366097ce34af2f5863d86d5ccc3f9ec384d8ade4b60ccc8124c7fc88664f1afd2b0962fc8775bf</hash>
-        <hash alg="SHA3-256">4b4f08ad7606a3ac62997779484919a302267b26d26ee19125f8a7eea60e8a71</hash>
-        <hash alg="SHA3-512">65c6845ebae981cb81b61107707ced39f5b377dae970b47606ef482aaf10e3729def0da40d9377c43abbfb483a5ceae039b0d51c129c50a6d36ad351a5d6b01e</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>Apache-2.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/org.jspecify/jspecify@1.0.0?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>http://jspecify.org/</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://github.com/jspecify/jspecify/</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/com.google.errorprone/error_prone_annotations@2.43.0?type=jar">
-      <publisher>Google LLC</publisher>
-      <group>com.google.errorprone</group>
-      <name>error_prone_annotations</name>
-      <version>2.43.0</version>
-      <description>Error Prone is a static analysis tool for Java that catches common programming mistakes at compile-time.</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">59fe4a79ce3218423f4f8918f04ef22f</hash>
-        <hash alg="SHA-1">a4f9062316c31850b03085e45717f564fd563ceb</hash>
-        <hash alg="SHA-256">48272e75c16e1f7bdc7bd19529ccacd5ee170404701d7f5a23441bb5847957f5</hash>
-        <hash alg="SHA-512">1e9e8cc7e7eebdbb12c21ad94868c731c49533dd9ef5c6db6e93c421c57ca4e6a5a22e1830a41c65b19e4755c84d6450dccea0f8d23258a65a9d395dfd17405e</hash>
-        <hash alg="SHA-384">d735d664455177247d16437ac74a838b42ccdc98277153d27c8e0006f942194a3260527d4b3dcb8f056b2ac4ef4fa9fa</hash>
-        <hash alg="SHA3-384">fecfff7371580a679cc3caf3f6a2ca61507e8e8103d076654d554843d9daf6b3667042058a5ae2876750b06e1f20d45d</hash>
-        <hash alg="SHA3-256">2ea4cfd5b7b2cf0e82ff2695db7164d4ed5a8b8c5805324c462e5b4ba681604c</hash>
-        <hash alg="SHA3-512">9dcadf4ef206a7ed5da9466e97156df3f0b95cea0bf3b81cad8d5020475c6c0a99d80980d196512eaed27b2f15d41d5c9df6d10ff3c4e4e9b52311f4ecae8573</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>Apache-2.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/com.google.errorprone/error_prone_annotations@2.43.0?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://errorprone.info/error_prone_annotations</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://github.com/google/error-prone/error_prone_annotations</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/com.google.j2objc/j2objc-annotations@3.1?type=jar">
-      <group>com.google.j2objc</group>
-      <name>j2objc-annotations</name>
-      <version>3.1</version>
-      <description>A set of annotations that provide additional information to the J2ObjC
-    translator to modify the result of translation.</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">abe8bd3abff622b9a8b15c3a737aa741</hash>
-        <hash alg="SHA-1">a892ca9507839bbdb900d64310ac98256cab992f</hash>
-        <hash alg="SHA-256">84d3a150518485f8140ea99b8a985656749629f6433c92b80c75b36aba3b099b</hash>
-        <hash alg="SHA-512">34ee5aad57b0b507e89c897306f73043f80fa0eb02b453e54d9052feb0808a0d2ed835d888946211921d2bf733780b19ff636479ce19b9f48814ba6008733ce1</hash>
-        <hash alg="SHA-384">7b760a346a586d6a3fa4477807e2f02f091e61898fc9a6ff449e43c55b6465fbbc17720663183c84c41d4d8814085e51</hash>
-        <hash alg="SHA3-384">a2166c1c08f947c0e60aa7c9167602942e7bac37ba45863d34c0132a1f352e7807a382588d350b93bdbbbbe315a3573f</hash>
-        <hash alg="SHA3-256">3d4d3b8bfd2ad13351a53610aa4bf1c5a69d2bde4272c281003120ed9bcddb8c</hash>
-        <hash alg="SHA3-512">0a574b379a3f8022f0b88252c87d0e6b6cfa434fdb981efd1b24387025a962d7ac4e90161e8bd048df142bf52f4fc41e4a0c1d45e4eeb872c5954aad552988e9</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>Apache-2.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/com.google.j2objc/j2objc-annotations@3.1?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://github.com/google/j2objc/</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </reference>
-        <reference type="vcs">
-          <url>http://github.com/google/j2objc</url>
         </reference>
       </externalReferences>
     </component>
@@ -831,47 +428,6 @@
         </reference>
       </externalReferences>
     </component>
-    <component type="library" bom-ref="pkg:maven/org.opendaylight.openflowplugin.model/model-flow-service@0.20.0?type=jar">
-      <publisher>OpenDaylight</publisher>
-      <group>org.opendaylight.openflowplugin.model</group>
-      <name>model-flow-service</name>
-      <version>0.20.0</version>
-      <description>Bundle parent (felix-based)</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">d90810675cb102ee3fef08155701cda9</hash>
-        <hash alg="SHA-1">a98440ba0bae7d5a9660a6c8788acb72dd85ed90</hash>
-        <hash alg="SHA-256">24d20a85e26dde6afb622a631c56cefb06ac6a2984705b162fbc55c14eff0692</hash>
-        <hash alg="SHA-512">b23ccf0dadcbcf8b84dd4c6adb4cc9730202e7b65783156ff0849a2d75262d7dc4f9471120fe10da0e0222e9b1b7801d582994696ef7e579f12852dfb834ae88</hash>
-        <hash alg="SHA-384">54922011333488e21f8949d3b4ee2cf8a00e2fe2bad53f4b0bac3e3ec20174c5a87a3936260123fe3380e2c19ae945db</hash>
-        <hash alg="SHA3-384">4d15c040d91ec8c276deebffc43e59a530a40df8ea822ce23df59dfdc4cfc8b1eb8b6857b95ff8c86d9d1a4d39f00e51</hash>
-        <hash alg="SHA3-256">934341cbdbd7e4255d9654213abb23a80580e730cf07d98ff8f4a602975b8be1</hash>
-        <hash alg="SHA3-512">8714c61a39ee90c2ae3350a30c64eb592066806283fdb3cdcc8f1d6769cf7f9de7d6b14047f560d4f609d78dc804d080c318aaad41a28ea0a32151709aea67a1</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>EPL-1.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/org.opendaylight.openflowplugin.model/model-flow-service@0.20.0?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://nexus.opendaylight.org/content/sites/site//org.opendaylight.openflowplugin.model/latest/model-flow-service/odlparent/bundle-parent/bundle-parent/binding-bundle-parent/binding-parent/openflowplugin-parent/model-flow-service/</url>
-        </reference>
-        <reference type="build-system">
-          <url>https://jenkins.opendaylight.org/releng/</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://nexus.opendaylight.org/content/repositories/opendaylight.release/</url>
-        </reference>
-        <reference type="issue-tracker">
-          <url>https://jira.opendaylight.org/</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://wiki.opendaylight.org/view/OpenDaylight_OpenFlow_Plugin:Main</url>
-        </reference>
-      </externalReferences>
-    </component>
     <component type="library" bom-ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-inet-types@14.0.13?type=jar">
       <publisher>OpenDaylight</publisher>
       <group>org.opendaylight.mdsal.binding.model.ietf</group>
@@ -995,6 +551,88 @@
         </reference>
       </externalReferences>
     </component>
+    <component type="library" bom-ref="pkg:maven/org.opendaylight.mdsal.model/opendaylight-l2-types@2013.08.27.27.2?type=jar">
+      <publisher>OpenDaylight</publisher>
+      <group>org.opendaylight.mdsal.model</group>
+      <name>opendaylight-l2-types</name>
+      <version>2013.08.27.27.2</version>
+      <description>Bundle parent (felix-based)</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">484320012ff44125470f79716451af12</hash>
+        <hash alg="SHA-1">38e5d882172025e0418d73862a11d453d8473042</hash>
+        <hash alg="SHA-256">3565d81e00e6fdea81aa08c1d5c2b217169641c3d734ef9c3a2f9f79790b9062</hash>
+        <hash alg="SHA-512">5cda481db2d304469a4220b53bc9adf21a5fc1883d64b775aa03a71d0a1751c7064c9bbb4b05e35e30e512401a88fc8be1527ed9dd53b271080ed7b4fd05b0da</hash>
+        <hash alg="SHA-384">4f226f8fcf5f13d2f11cd138f41f2e687ca324239395ce14b093784f5872cb005e8b660edcb065970e61c2c53529f620</hash>
+        <hash alg="SHA3-384">f57f1fcf95a0531af60d84eb0ae0ae08a8b556b2862e0463d3bbf06c7743aff0a5a0253feefe8a445979e7357263e015</hash>
+        <hash alg="SHA3-256">0282265bed302ae06248c6e640f2b86892acc9076fd73923c271c7af154115a9</hash>
+        <hash alg="SHA3-512">106449a15a59c419158ddbd95be0ef6bb70b566b1498455db614ec14a834e52bf597fda6794081dc5128d0bc6899570cc9d4f7c1b86c1b8f4be8ae341668081f</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>EPL-1.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/org.opendaylight.mdsal.model/opendaylight-l2-types@2013.08.27.27.2?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>https://nexus.opendaylight.org/content/sites/site//org.opendaylight.mdsal.model/latest/opendaylight-l2-types/odlparent/bundle-parent/bundle-parent/binding-bundle-parent/binding-parent/opendaylight-l2-types/</url>
+        </reference>
+        <reference type="build-system">
+          <url>https://jenkins.opendaylight.org/releng/</url>
+        </reference>
+        <reference type="distribution-intake">
+          <url>https://nexus.opendaylight.org/content/repositories/opendaylight.release/</url>
+        </reference>
+        <reference type="issue-tracker">
+          <url>https://jira.opendaylight.org/</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://wiki.opendaylight.org/display/ODL/MD-SAL/opendaylight-l2-types</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/org.opendaylight.openflowplugin.model/model-flow-service@0.20.0?type=jar">
+      <publisher>OpenDaylight</publisher>
+      <group>org.opendaylight.openflowplugin.model</group>
+      <name>model-flow-service</name>
+      <version>0.20.0</version>
+      <description>Bundle parent (felix-based)</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">d90810675cb102ee3fef08155701cda9</hash>
+        <hash alg="SHA-1">a98440ba0bae7d5a9660a6c8788acb72dd85ed90</hash>
+        <hash alg="SHA-256">24d20a85e26dde6afb622a631c56cefb06ac6a2984705b162fbc55c14eff0692</hash>
+        <hash alg="SHA-512">b23ccf0dadcbcf8b84dd4c6adb4cc9730202e7b65783156ff0849a2d75262d7dc4f9471120fe10da0e0222e9b1b7801d582994696ef7e579f12852dfb834ae88</hash>
+        <hash alg="SHA-384">54922011333488e21f8949d3b4ee2cf8a00e2fe2bad53f4b0bac3e3ec20174c5a87a3936260123fe3380e2c19ae945db</hash>
+        <hash alg="SHA3-384">4d15c040d91ec8c276deebffc43e59a530a40df8ea822ce23df59dfdc4cfc8b1eb8b6857b95ff8c86d9d1a4d39f00e51</hash>
+        <hash alg="SHA3-256">934341cbdbd7e4255d9654213abb23a80580e730cf07d98ff8f4a602975b8be1</hash>
+        <hash alg="SHA3-512">8714c61a39ee90c2ae3350a30c64eb592066806283fdb3cdcc8f1d6769cf7f9de7d6b14047f560d4f609d78dc804d080c318aaad41a28ea0a32151709aea67a1</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>EPL-1.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/org.opendaylight.openflowplugin.model/model-flow-service@0.20.0?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>https://nexus.opendaylight.org/content/sites/site//org.opendaylight.openflowplugin.model/latest/model-flow-service/odlparent/bundle-parent/bundle-parent/binding-bundle-parent/binding-parent/openflowplugin-parent/model-flow-service/</url>
+        </reference>
+        <reference type="build-system">
+          <url>https://jenkins.opendaylight.org/releng/</url>
+        </reference>
+        <reference type="distribution-intake">
+          <url>https://nexus.opendaylight.org/content/repositories/opendaylight.release/</url>
+        </reference>
+        <reference type="issue-tracker">
+          <url>https://jira.opendaylight.org/</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://wiki.opendaylight.org/view/OpenDaylight_OpenFlow_Plugin:Main</url>
+        </reference>
+      </externalReferences>
+    </component>
     <component type="library" bom-ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-yang-types@14.0.13?type=jar">
       <publisher>OpenDaylight</publisher>
       <group>org.opendaylight.mdsal.binding.model.ietf</group>
@@ -1115,47 +753,6 @@
         </reference>
         <reference type="vcs">
           <url>https://wiki.opendaylight.org/view/OpenDaylight_OpenFlow_Plugin:Main</url>
-        </reference>
-      </externalReferences>
-    </component>
-    <component type="library" bom-ref="pkg:maven/org.opendaylight.mdsal.model/opendaylight-l2-types@2013.08.27.27.2?type=jar">
-      <publisher>OpenDaylight</publisher>
-      <group>org.opendaylight.mdsal.model</group>
-      <name>opendaylight-l2-types</name>
-      <version>2013.08.27.27.2</version>
-      <description>Bundle parent (felix-based)</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">484320012ff44125470f79716451af12</hash>
-        <hash alg="SHA-1">38e5d882172025e0418d73862a11d453d8473042</hash>
-        <hash alg="SHA-256">3565d81e00e6fdea81aa08c1d5c2b217169641c3d734ef9c3a2f9f79790b9062</hash>
-        <hash alg="SHA-512">5cda481db2d304469a4220b53bc9adf21a5fc1883d64b775aa03a71d0a1751c7064c9bbb4b05e35e30e512401a88fc8be1527ed9dd53b271080ed7b4fd05b0da</hash>
-        <hash alg="SHA-384">4f226f8fcf5f13d2f11cd138f41f2e687ca324239395ce14b093784f5872cb005e8b660edcb065970e61c2c53529f620</hash>
-        <hash alg="SHA3-384">f57f1fcf95a0531af60d84eb0ae0ae08a8b556b2862e0463d3bbf06c7743aff0a5a0253feefe8a445979e7357263e015</hash>
-        <hash alg="SHA3-256">0282265bed302ae06248c6e640f2b86892acc9076fd73923c271c7af154115a9</hash>
-        <hash alg="SHA3-512">106449a15a59c419158ddbd95be0ef6bb70b566b1498455db614ec14a834e52bf597fda6794081dc5128d0bc6899570cc9d4f7c1b86c1b8f4be8ae341668081f</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>EPL-1.0</id>
-        </license>
-      </licenses>
-      <purl>pkg:maven/org.opendaylight.mdsal.model/opendaylight-l2-types@2013.08.27.27.2?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>https://nexus.opendaylight.org/content/sites/site//org.opendaylight.mdsal.model/latest/opendaylight-l2-types/odlparent/bundle-parent/bundle-parent/binding-bundle-parent/binding-parent/opendaylight-l2-types/</url>
-        </reference>
-        <reference type="build-system">
-          <url>https://jenkins.opendaylight.org/releng/</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://nexus.opendaylight.org/content/repositories/opendaylight.release/</url>
-        </reference>
-        <reference type="issue-tracker">
-          <url>https://jira.opendaylight.org/</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://wiki.opendaylight.org/display/ODL/MD-SAL/opendaylight-l2-types</url>
         </reference>
       </externalReferences>
     </component>
@@ -1356,6 +953,411 @@
         </reference>
       </externalReferences>
     </component>
+    <component type="library" bom-ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar">
+      <group>com.google.guava</group>
+      <name>guava</name>
+      <version>33.5.0-jre</version>
+      <description>Guava is a suite of core and expanded libraries that include
+    utility classes, Google's collections, I/O classes, and
+    much more.</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">d9fbf39a41a5bab891348f07668e18c5</hash>
+        <hash alg="SHA-1">8699de25f2f979108d6c1b804a7ba38cda1116bc</hash>
+        <hash alg="SHA-256">1e301f0c52ac248b0b14fdc3d12283c77252d4d6f48521d572e7d8c4c2cc4ac7</hash>
+        <hash alg="SHA-512">994a4dbcbd8e528ad3b4a7acf49b631a40dcebb03d9a8f5e1d3b74351f805f77774e9a19f7233e42036cb415b7838710f207ac1e18335e4a219b7f99ea22a44f</hash>
+        <hash alg="SHA-384">9dabff6e543ead881b20d38a533e9151aaa83999239cf0ace3e712cf678e7976c3a50d79e3f3c57afc05a3b9ff14ad90</hash>
+        <hash alg="SHA3-384">9f65d4d942113facb2eb25229c1530b79dd3b8994574034b8d4a1c2b39ed8ee5bb4d415ec690d3d87cee0d8cb2283564</hash>
+        <hash alg="SHA3-256">fedafab2279bdf6eff66314fc61b056e92312695678e66dc1e25fe1d18af5a36</hash>
+        <hash alg="SHA3-512">e64f3c49f9030358554bb0b8abdff729394988f1e3247b05a86302014eeff4a2855acf46d9bf1c683cbecc33a24173a20a103d3c82c94f8cabd6676a01b40fb6</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>https://github.com/google/guava</url>
+        </reference>
+        <reference type="build-system">
+          <url>https://github.com/google/guava/actions</url>
+        </reference>
+        <reference type="issue-tracker">
+          <url>https://github.com/google/guava/issues</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://github.com/google/guava/guava</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/com.google.guava/failureaccess@1.0.3?type=jar">
+      <group>com.google.guava</group>
+      <name>failureaccess</name>
+      <version>1.0.3</version>
+      <description>Contains
+    com.google.common.util.concurrent.internal.InternalFutureFailureAccess and
+    InternalFutures. Most users will never need to use this artifact. Its
+    classes are conceptually a part of Guava, but they're in this separate
+    artifact so that Android libraries can use them without pulling in all of
+    Guava (just as they can use ListenableFuture by depending on the
+    listenablefuture artifact).</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">29a782e90f6b37218b18bb880d2a8f4a</hash>
+        <hash alg="SHA-1">aeaffd00d57023a2c947393ed251f0354f0985fc</hash>
+        <hash alg="SHA-256">cbfc3906b19b8f55dd7cfd6dfe0aa4532e834250d7f080bd8d211a3e246b59cb</hash>
+        <hash alg="SHA-512">72be228e7805da5623e42bf024ded7d9147023c66b22f4dbd04ac6898201af46ee82e1f92ea51eb0595f1b49151c4b8ecb862653d4906c17609c42544ee97abf</hash>
+        <hash alg="SHA-384">9dd1a2a08efda311604992d3e7cee64873bc8c64de3b423b1b3a3dcc1f7f0810bb03901fbfe39a5f835accb0646f4ad8</hash>
+        <hash alg="SHA3-384">ffd67766c165ee77e96824e06de2c19864a6e61f785b2085eb825f308f173d71f2555559d90d910f33f3367378ace0e3</hash>
+        <hash alg="SHA3-256">08a77b528a72ca412b36e4004692705ebfd75cfb4897c88632d367d08a34b09f</hash>
+        <hash alg="SHA3-512">7cba6c266babbe8272f029eea6e2cbddadee96eb1a16916a6eb2441a55837867ce717385d4388735fd83f2f6555931077c0ebda011a1ee9a37ac38c8c0c43a65</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/com.google.guava/failureaccess@1.0.3?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>https://github.com/google/guava/failureaccess</url>
+        </reference>
+        <reference type="build-system">
+          <url>https://github.com/google/guava/actions</url>
+        </reference>
+        <reference type="distribution-intake">
+          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </reference>
+        <reference type="issue-tracker">
+          <url>https://github.com/google/guava/issues</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://github.com/google/guava/failureaccess</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/com.google.guava/listenablefuture@9999.0-empty-to-avoid-conflict-with-guava?type=jar">
+      <group>com.google.guava</group>
+      <name>listenablefuture</name>
+      <version>9999.0-empty-to-avoid-conflict-with-guava</version>
+      <description>An empty artifact that Guava depends on to signal that it is providing
+    ListenableFuture -- but is also available in a second "version" that
+    contains com.google.common.util.concurrent.ListenableFuture class, without
+    any other Guava classes. The idea is:
+
+    - If users want only ListenableFuture, they depend on listenablefuture-1.0.
+
+    - If users want all of Guava, they depend on guava, which, as of Guava
+    27.0, depends on
+    listenablefuture-9999.0-empty-to-avoid-conflict-with-guava. The 9999.0-...
+    version number is enough for some build systems (notably, Gradle) to select
+    that empty artifact over the "real" listenablefuture-1.0 -- avoiding a
+    conflict with the copy of ListenableFuture in guava itself. If users are
+    using an older version of Guava or a build system other than Gradle, they
+    may see class conflicts. If so, they can solve them by manually excluding
+    the listenablefuture artifact or manually forcing their build systems to
+    use 9999.0-....</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">d094c22570d65e132c19cea5d352e381</hash>
+        <hash alg="SHA-1">b421526c5f297295adef1c886e5246c39d4ac629</hash>
+        <hash alg="SHA-256">b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99</hash>
+        <hash alg="SHA-512">c5987a979174cbacae2e78b319f080420cc71bcdbcf7893745731eeb93c23ed13bff8d4599441f373f3a246023d33df03e882de3015ee932a74a774afdd0782f</hash>
+        <hash alg="SHA-384">caff9b74079f95832ca7f6029346b34b606051cc8c5a4389fac263511d277ada0c55f28b0d43011055b268c6eb7184d5</hash>
+        <hash alg="SHA3-384">e939f08df0545847ea0d3e4b04a114b08499ad069ba8ec9461d1779f87a56e0c37273630a0f4c14e78c348d3ac7eb97f</hash>
+        <hash alg="SHA3-256">1f0a8b1177773b3a8ace839df5eed63cbf56b24a38714898a6e4ed065c42559f</hash>
+        <hash alg="SHA3-512">6b495ecc2a18b17365cb08d124a0da47f04bcdde81927b5245edf3edd8e498c3c3fb92ce6a4127f660bac851bb1d3e4510e5c20d03be47ce99dc296d360db285</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/com.google.guava/listenablefuture@9999.0-empty-to-avoid-conflict-with-guava?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>https://github.com/google/guava/listenablefuture</url>
+        </reference>
+        <reference type="build-system">
+          <url>https://travis-ci.org/google/guava</url>
+        </reference>
+        <reference type="distribution-intake">
+          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </reference>
+        <reference type="issue-tracker">
+          <url>https://github.com/google/guava/issues</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://github.com/google/guava/listenablefuture</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/org.jspecify/jspecify@1.0.0?type=jar">
+      <group>org.jspecify</group>
+      <name>jspecify</name>
+      <version>1.0.0</version>
+      <description>An artifact of well-named and well-specified annotations to power static analysis checks</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">9133aba420d0ca3b001dbb6ae9992cf6</hash>
+        <hash alg="SHA-1">7425a601c1c7ec76645a78d22b8c6a627edee507</hash>
+        <hash alg="SHA-256">1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab</hash>
+        <hash alg="SHA-512">efded31ef5b342f09422935076e599789076431e93a746685c0607e7de5592719ba6aacde0be670b3f064d1e85630d58d5bce6b34aed2a288fdb34f745efb7bc</hash>
+        <hash alg="SHA-384">814f860e5a44ead6c457676841eef471a8b87be31b84c60a8a4477a18a9cbcb6e3c2ae700969d5c5e52309d961e0537a</hash>
+        <hash alg="SHA3-384">c8844e5b71e5ecfbb7366097ce34af2f5863d86d5ccc3f9ec384d8ade4b60ccc8124c7fc88664f1afd2b0962fc8775bf</hash>
+        <hash alg="SHA3-256">4b4f08ad7606a3ac62997779484919a302267b26d26ee19125f8a7eea60e8a71</hash>
+        <hash alg="SHA3-512">65c6845ebae981cb81b61107707ced39f5b377dae970b47606ef482aaf10e3729def0da40d9377c43abbfb483a5ceae039b0d51c129c50a6d36ad351a5d6b01e</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/org.jspecify/jspecify@1.0.0?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>http://jspecify.org/</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://github.com/jspecify/jspecify/</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/com.google.errorprone/error_prone_annotations@2.43.0?type=jar">
+      <publisher>Google LLC</publisher>
+      <group>com.google.errorprone</group>
+      <name>error_prone_annotations</name>
+      <version>2.43.0</version>
+      <description>Error Prone is a static analysis tool for Java that catches common programming mistakes at compile-time.</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">59fe4a79ce3218423f4f8918f04ef22f</hash>
+        <hash alg="SHA-1">a4f9062316c31850b03085e45717f564fd563ceb</hash>
+        <hash alg="SHA-256">48272e75c16e1f7bdc7bd19529ccacd5ee170404701d7f5a23441bb5847957f5</hash>
+        <hash alg="SHA-512">1e9e8cc7e7eebdbb12c21ad94868c731c49533dd9ef5c6db6e93c421c57ca4e6a5a22e1830a41c65b19e4755c84d6450dccea0f8d23258a65a9d395dfd17405e</hash>
+        <hash alg="SHA-384">d735d664455177247d16437ac74a838b42ccdc98277153d27c8e0006f942194a3260527d4b3dcb8f056b2ac4ef4fa9fa</hash>
+        <hash alg="SHA3-384">fecfff7371580a679cc3caf3f6a2ca61507e8e8103d076654d554843d9daf6b3667042058a5ae2876750b06e1f20d45d</hash>
+        <hash alg="SHA3-256">2ea4cfd5b7b2cf0e82ff2695db7164d4ed5a8b8c5805324c462e5b4ba681604c</hash>
+        <hash alg="SHA3-512">9dcadf4ef206a7ed5da9466e97156df3f0b95cea0bf3b81cad8d5020475c6c0a99d80980d196512eaed27b2f15d41d5c9df6d10ff3c4e4e9b52311f4ecae8573</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/com.google.errorprone/error_prone_annotations@2.43.0?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>https://errorprone.info/error_prone_annotations</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://github.com/google/error-prone/error_prone_annotations</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/com.google.j2objc/j2objc-annotations@3.1?type=jar">
+      <group>com.google.j2objc</group>
+      <name>j2objc-annotations</name>
+      <version>3.1</version>
+      <description>A set of annotations that provide additional information to the J2ObjC
+    translator to modify the result of translation.</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">abe8bd3abff622b9a8b15c3a737aa741</hash>
+        <hash alg="SHA-1">a892ca9507839bbdb900d64310ac98256cab992f</hash>
+        <hash alg="SHA-256">84d3a150518485f8140ea99b8a985656749629f6433c92b80c75b36aba3b099b</hash>
+        <hash alg="SHA-512">34ee5aad57b0b507e89c897306f73043f80fa0eb02b453e54d9052feb0808a0d2ed835d888946211921d2bf733780b19ff636479ce19b9f48814ba6008733ce1</hash>
+        <hash alg="SHA-384">7b760a346a586d6a3fa4477807e2f02f091e61898fc9a6ff449e43c55b6465fbbc17720663183c84c41d4d8814085e51</hash>
+        <hash alg="SHA3-384">a2166c1c08f947c0e60aa7c9167602942e7bac37ba45863d34c0132a1f352e7807a382588d350b93bdbbbbe315a3573f</hash>
+        <hash alg="SHA3-256">3d4d3b8bfd2ad13351a53610aa4bf1c5a69d2bde4272c281003120ed9bcddb8c</hash>
+        <hash alg="SHA3-512">0a574b379a3f8022f0b88252c87d0e6b6cfa434fdb981efd1b24387025a962d7ac4e90161e8bd048df142bf52f4fc41e4a0c1d45e4eeb872c5954aad552988e9</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/com.google.j2objc/j2objc-annotations@3.1?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>https://github.com/google/j2objc/</url>
+        </reference>
+        <reference type="distribution-intake">
+          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </reference>
+        <reference type="vcs">
+          <url>http://github.com/google/j2objc</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/org.slf4j/slf4j-api@2.0.12?type=jar">
+      <publisher>QOS.ch</publisher>
+      <group>org.slf4j</group>
+      <name>slf4j-api</name>
+      <version>2.0.12</version>
+      <description>The slf4j API</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">86eb051f2e2d6497a3a57810c963a9d6</hash>
+        <hash alg="SHA-1">48f109a2a6d8f446c794f3e3fa0d86df0cdfa312</hash>
+        <hash alg="SHA-256">a79502b8abdfbd722846a27691226a4088682d6d35654f9b80e2a9ccacf7ed47</hash>
+        <hash alg="SHA-512">5bc0a61bd32b63ab7d44e210f1dcc3e4dc7417186ab8a2297f22edfa631513cc55b7fe3bb15eb0124b9a30dcfd4d168932bf3262cf6491feb2facbdfbe661e72</hash>
+        <hash alg="SHA-384">7c8d503d37899b577f39e5a3517b69034cad655e31d4b783313533bf49054f25b0ae87f8c32e4eb40677a53011e6bbce</hash>
+        <hash alg="SHA3-384">9bf58592bbf1d21ec6a6a55a084ea21a16d5d5c38dbadcded450ef6af8717b364beae497fdb600d9d3695e62fb26fe4b</hash>
+        <hash alg="SHA3-256">72000cfd589a16b4eb81e4ac648a2781847aafe0dd464fa260fdd79196ccc693</hash>
+        <hash alg="SHA3-512">1f91affc70ce6fdfa69be146d9f23835702a22c3a47b6c495b6964b3ea80d901bb1517b26e9fc973a3e6c7f38c25b74397856ae236519bf3d2ea96148c3118e2</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>MIT</id>
+          <url>https://opensource.org/license/mit/</url>
+        </license>
+      </licenses>
+      <purl>pkg:maven/org.slf4j/slf4j-api@2.0.12?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>http://www.slf4j.org</url>
+        </reference>
+        <reference type="distribution-intake">
+          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://github.com/qos-ch/slf4j/slf4j-parent/slf4j-api</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/org.osgi/org.osgi.service.component.annotations@1.5.1?type=jar">
+      <publisher>Eclipse Foundation</publisher>
+      <group>org.osgi</group>
+      <name>org.osgi.service.component.annotations</name>
+      <version>1.5.1</version>
+      <description>OSGi Companion Code for org.osgi.service.component.annotations Version 1.5.1</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">5b6a6394b2e6282758067ec43946878b</hash>
+        <hash alg="SHA-1">3a26aabd81c76d47e19a377daf5f54d3f3541412</hash>
+        <hash alg="SHA-256">42c080de090896f45d2a4e980a261d5b6addeee07ec4b201f01de95ab562b448</hash>
+        <hash alg="SHA-512">5ebdf12110f5abcea4ab2d05f521accb52b2e069c9728461fe65daae8be85ff52f9c1f4c66f21d273d78487dd57c7db2b9c16915fb57093973efffef47069b7a</hash>
+        <hash alg="SHA-384">763cc7c69e9241372e42eb7e14f2aee7ae0b3ab825902f1bad55ccd1e6a60c4816d39e19cd95895d26eeb94a9dd35a1c</hash>
+        <hash alg="SHA3-384">f772bd5d78acd8e34f80192f145b55630b78bcd51b4a9ea3c30941e96a3e5e25bac40bf6eec98a54b7de21d47d5a7962</hash>
+        <hash alg="SHA3-256">d496ecf51b2402ccee67fe833ad192717bda6e51258bd5849b760048982f71a6</hash>
+        <hash alg="SHA3-512">9480b330e181d5a9f1273960acc1d5977654369a2198dfe361b95f854c2c8dc6aab53c586040e8576928fb77c2aa2d283d10e05af9cd34ded2c4a363961252c4</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+          <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+        </license>
+      </licenses>
+      <purl>pkg:maven/org.osgi/org.osgi.service.component.annotations@1.5.1?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>https://docs.osgi.org/</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://github.com/osgi/osgi</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/org.osgi/org.osgi.namespace.extender@1.0.1?type=jar">
+      <publisher>OSGi Alliance</publisher>
+      <group>org.osgi</group>
+      <name>org.osgi.namespace.extender</name>
+      <version>1.0.1</version>
+      <description>OSGi Companion Code for org.osgi.namespace.extender Version 1.0.1.</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">e0c5e60d730994a12c061554a585449a</hash>
+        <hash alg="SHA-1">18c5eac4fe14b1d1914e62ea0e95abe80af31a9c</hash>
+        <hash alg="SHA-256">93d798bde7fa760961408c8a10a965ca7ba1dbf98a3a706c86d8290f528ad519</hash>
+        <hash alg="SHA-512">1ea41a1c40bd8f01bf8fb8f832b70000950b33380da556e95da76cc956160e8912beb11723d1b718a6ad1352aa7fbd3f1718095242c595681a67317e24f44035</hash>
+        <hash alg="SHA-384">205a5059429301c726f7e61bbbca16b1effd184339fb6666f1fe2bd475d0b422875d0e36a540bd7c5380e7d2dc5f1077</hash>
+        <hash alg="SHA3-384">5045aa55cde9af724e6ab35436fbbda6e13f75ce95a5c704f975333a7b057be64b55ec9df3618f0bfdb639bd17edbed1</hash>
+        <hash alg="SHA3-256">6c7c65bc72c3579867c0c22e355b73450dee1e8c52d9fd181a033b4749930a84</hash>
+        <hash alg="SHA3-512">3d515b4a9086eda9f2977360263bee3aac2171f2df10ced1178cfd4a391aee79a60b13e60d709d1a1cd1d7adc3ef18b967a634c968ea92435334fac12b2cb989</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/org.osgi/org.osgi.namespace.extender@1.0.1?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>http://www.osgi.org/</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://osgi.org/git/build.git</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/org.osgi/org.osgi.util.function@1.0.0?type=jar">
+      <publisher>OSGi Alliance</publisher>
+      <group>org.osgi</group>
+      <name>org.osgi.util.function</name>
+      <version>1.0.0</version>
+      <description>OSGi Companion Code for org.osgi.util.function Version 1.0.0.</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">458ae5c5581deae84611bc9ec76d0f5e</hash>
+        <hash alg="SHA-1">1f38195e5eab663c162989a4a2186e8d62c2cc1d</hash>
+        <hash alg="SHA-256">4ff9329012c01a0c69c05721a6bd0b910d40a0d32108284e59c1a6215cee7a43</hash>
+        <hash alg="SHA-512">e1fac954f3429fe8b756bc0039c1b278b0273694b97e3e6669672eed19a9c7edfbc0cdad38af6b9fea2a644ae48eddef706444bfad7043e63a6643fbd441b641</hash>
+        <hash alg="SHA-384">30392fa69043d010dce065f804819377a90e6f19fa7f907d67a79fd4e5e91d9e37cb6c31120b55ef5093206aa7853df9</hash>
+        <hash alg="SHA3-384">61a3367ff890c1cc12ef497c7e3b4301f4bba68a4fe94aa1af579f232b99243ecb90f8b28195f014fa570bfa1fe7ddd5</hash>
+        <hash alg="SHA3-256">cadda50f767ff64c459ac66554aec07c205f4e885265dc81cd99ade48eed3fec</hash>
+        <hash alg="SHA3-512">4fb83ed245f9bc15aea3873a444ab5fb9297d2f1c65eec9984e75f52e0290c1ab67c151bc6848776580c82786aca9397d0d8f90d6818c1b06005e9df31f3b55f</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+        </license>
+      </licenses>
+      <purl>pkg:maven/org.osgi/org.osgi.util.function@1.0.0?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>http://www.osgi.org/</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://osgi.org/git/build.git</url>
+        </reference>
+      </externalReferences>
+    </component>
+    <component type="library" bom-ref="pkg:maven/org.osgi/org.osgi.util.promise@1.3.0?type=jar">
+      <publisher>Eclipse Foundation</publisher>
+      <group>org.osgi</group>
+      <name>org.osgi.util.promise</name>
+      <version>1.3.0</version>
+      <description>OSGi Companion Code for org.osgi.util.promise Version 1.3.0</description>
+      <scope>required</scope>
+      <hashes>
+        <hash alg="MD5">9ebf9e52ae63e0fbb893f896c0714a6d</hash>
+        <hash alg="SHA-1">8c9fe683028fdcfd8d8b3fb9175ea0d4f582a3c3</hash>
+        <hash alg="SHA-256">7053c57e7d7d88fec6b90979a3af125e1d2bb847268a328a2f1ed65ad0a4c185</hash>
+        <hash alg="SHA-512">be222309f4ac8b8cc48da708ba3a51b4aa6e9d714571dfb14a116823b3b91cc8519f89f46ba64e79b84816aa58a4b810e389b2c6005b0cf987810ebfadd7013b</hash>
+        <hash alg="SHA-384">db69a765ff7f8d62feb756608860a2e79447e6363a306b9aaf362b1cbd53938a1092b3fd3ca5e8c1f48ff68182a5d2e8</hash>
+        <hash alg="SHA3-384">5fcea9f14af06cb3c98196c6496f40533c20f7a646c34bdb68d8de7af18bcfd4811626ae3eab29ad984f92983256a069</hash>
+        <hash alg="SHA3-256">c5b3f1834933e5a06ee87ab11c18996224888f312637d157211de67537468085</hash>
+        <hash alg="SHA3-512">6f5f842d7b76e2763b9094e394e6d18ec8aa533fdaab66eb99a95d45dafcf41ea8816438e81b4670b7b0b7874c87be7ce6a81355b0f7db5bad16752b4234ce6c</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>Apache-2.0</id>
+          <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+        </license>
+      </licenses>
+      <purl>pkg:maven/org.osgi/org.osgi.util.promise@1.3.0?type=jar</purl>
+      <externalReferences>
+        <reference type="website">
+          <url>https://docs.osgi.org/</url>
+        </reference>
+        <reference type="vcs">
+          <url>https://github.com/osgi/osgi</url>
+        </reference>
+      </externalReferences>
+    </component>
     <component type="library" bom-ref="pkg:maven/org.osgi/org.osgi.annotation.bundle@1.1.0?type=jar">
       <publisher>OSGi Alliance</publisher>
       <group>org.osgi</group>
@@ -1422,70 +1424,25 @@
         </reference>
       </externalReferences>
     </component>
-    <component type="library" bom-ref="pkg:maven/org.slf4j/slf4j-api@2.0.12?type=jar">
-      <publisher>QOS.ch</publisher>
-      <group>org.slf4j</group>
-      <name>slf4j-api</name>
-      <version>2.0.12</version>
-      <description>The slf4j API</description>
-      <scope>required</scope>
-      <hashes>
-        <hash alg="MD5">86eb051f2e2d6497a3a57810c963a9d6</hash>
-        <hash alg="SHA-1">48f109a2a6d8f446c794f3e3fa0d86df0cdfa312</hash>
-        <hash alg="SHA-256">a79502b8abdfbd722846a27691226a4088682d6d35654f9b80e2a9ccacf7ed47</hash>
-        <hash alg="SHA-512">5bc0a61bd32b63ab7d44e210f1dcc3e4dc7417186ab8a2297f22edfa631513cc55b7fe3bb15eb0124b9a30dcfd4d168932bf3262cf6491feb2facbdfbe661e72</hash>
-        <hash alg="SHA-384">7c8d503d37899b577f39e5a3517b69034cad655e31d4b783313533bf49054f25b0ae87f8c32e4eb40677a53011e6bbce</hash>
-        <hash alg="SHA3-384">9bf58592bbf1d21ec6a6a55a084ea21a16d5d5c38dbadcded450ef6af8717b364beae497fdb600d9d3695e62fb26fe4b</hash>
-        <hash alg="SHA3-256">72000cfd589a16b4eb81e4ac648a2781847aafe0dd464fa260fdd79196ccc693</hash>
-        <hash alg="SHA3-512">1f91affc70ce6fdfa69be146d9f23835702a22c3a47b6c495b6964b3ea80d901bb1517b26e9fc973a3e6c7f38c25b74397856ae236519bf3d2ea96148c3118e2</hash>
-      </hashes>
-      <licenses>
-        <license>
-          <id>MIT</id>
-          <url>https://opensource.org/license/mit/</url>
-        </license>
-      </licenses>
-      <purl>pkg:maven/org.slf4j/slf4j-api@2.0.12?type=jar</purl>
-      <externalReferences>
-        <reference type="website">
-          <url>http://www.slf4j.org</url>
-        </reference>
-        <reference type="distribution-intake">
-          <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </reference>
-        <reference type="vcs">
-          <url>https://github.com/qos-ch/slf4j/slf4j-parent/slf4j-api</url>
-        </reference>
-      </externalReferences>
-    </component>
   </components>
   <dependencies>
     <dependency ref="pkg:maven/org.pntc.linkguard/linkguard-impl@15.0.2?type=bundle">
       <dependency ref="pkg:maven/org.pntc.linkguard/linkguard-api@15.0.2?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.mdsal/mdsal-binding-api@15.0.2?type=jar"/>
+      <dependency ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-inet-types@14.0.13?type=jar"/>
+      <dependency ref="pkg:maven/org.opendaylight.mdsal.model/opendaylight-l2-types@2013.08.27.27.2?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.openflowplugin.model/model-flow-service@0.20.0?type=jar"/>
+      <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
+      <dependency ref="pkg:maven/org.slf4j/slf4j-api@2.0.12?type=jar"/>
+      <dependency ref="pkg:maven/org.osgi/org.osgi.service.component.annotations@1.5.1?type=jar"/>
       <dependency ref="pkg:maven/org.osgi/org.osgi.annotation.bundle@1.1.0?type=jar"/>
       <dependency ref="pkg:maven/org.osgi/org.osgi.annotation.versioning@1.1.2?type=jar"/>
-      <dependency ref="pkg:maven/org.slf4j/slf4j-api@2.0.12?type=jar"/>
     </dependency>
     <dependency ref="pkg:maven/org.pntc.linkguard/linkguard-api@15.0.2?type=jar">
-      <dependency ref="pkg:maven/org.opendaylight.mdsal.model/ietf-topology@2013.10.21.27.2?type=jar"/>
       <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
       <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-spec@14.0.20?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.yangtools/yang-common@14.0.20?type=jar"/>
-    </dependency>
-    <dependency ref="pkg:maven/org.opendaylight.mdsal.model/ietf-topology@2013.10.21.27.2?type=jar">
-      <dependency ref="pkg:maven/org.opendaylight.ietf.model/rfc6991-ietf-inet-types@1.0.2?type=jar"/>
-      <dependency ref="pkg:maven/org.opendaylight.ietf.model/rfc6991-ietf-yang-types@1.0.2?type=jar"/>
-    </dependency>
-    <dependency ref="pkg:maven/org.opendaylight.ietf.model/rfc6991-ietf-inet-types@1.0.2?type=jar">
-      <dependency ref="pkg:maven/org.opendaylight.ietf/ietf-type-util@1.0.2?type=jar"/>
-      <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-reflect@14.0.20?type=jar"/>
-    </dependency>
-    <dependency ref="pkg:maven/org.opendaylight.ietf/ietf-type-util@1.0.2?type=jar">
-      <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
-      <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
     </dependency>
     <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar">
       <dependency ref="pkg:maven/com.google.guava/failureaccess@1.0.3?type=jar"/>
@@ -1500,13 +1457,6 @@
     <dependency ref="pkg:maven/com.google.errorprone/error_prone_annotations@2.43.0?type=jar"/>
     <dependency ref="pkg:maven/com.google.j2objc/j2objc-annotations@3.1?type=jar"/>
     <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
-    <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-reflect@14.0.20?type=jar">
-      <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
-      <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
-      <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-spec@14.0.20?type=jar"/>
-      <dependency ref="pkg:maven/org.opendaylight.yangtools/concepts@14.0.20?type=jar"/>
-      <dependency ref="pkg:maven/org.opendaylight.yangtools/yang-common@14.0.20?type=jar"/>
-    </dependency>
     <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-spec@14.0.20?type=jar">
       <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
       <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
@@ -1521,10 +1471,6 @@
       <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
       <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.yangtools/concepts@14.0.20?type=jar"/>
-    </dependency>
-    <dependency ref="pkg:maven/org.opendaylight.ietf.model/rfc6991-ietf-yang-types@1.0.2?type=jar">
-      <dependency ref="pkg:maven/org.opendaylight.ietf/ietf-type-util@1.0.2?type=jar"/>
-      <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-reflect@14.0.20?type=jar"/>
     </dependency>
     <dependency ref="pkg:maven/org.opendaylight.mdsal/mdsal-binding-api@15.0.2?type=jar">
       <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
@@ -1551,6 +1497,26 @@
     <dependency ref="pkg:maven/tech.pantheon.triemap/triemap@1.3.2?type=jar">
       <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
     </dependency>
+    <dependency ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-inet-types@14.0.13?type=jar">
+      <dependency ref="pkg:maven/org.opendaylight.mdsal.model/ietf-type-util@14.0.13?type=jar"/>
+      <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-reflect@14.0.20?type=jar"/>
+    </dependency>
+    <dependency ref="pkg:maven/org.opendaylight.mdsal.model/ietf-type-util@14.0.13?type=jar">
+      <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
+      <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
+    </dependency>
+    <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-reflect@14.0.20?type=jar">
+      <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
+      <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
+      <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-spec@14.0.20?type=jar"/>
+      <dependency ref="pkg:maven/org.opendaylight.yangtools/concepts@14.0.20?type=jar"/>
+      <dependency ref="pkg:maven/org.opendaylight.yangtools/yang-common@14.0.20?type=jar"/>
+    </dependency>
+    <dependency ref="pkg:maven/org.opendaylight.mdsal.model/opendaylight-l2-types@2013.08.27.27.2?type=jar">
+      <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
+      <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
+      <dependency ref="pkg:maven/org.opendaylight.yangtools/yang-common@14.0.20?type=jar"/>
+    </dependency>
     <dependency ref="pkg:maven/org.opendaylight.openflowplugin.model/model-flow-service@0.20.0?type=jar">
       <dependency ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-inet-types@14.0.13?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-yang-types@14.0.13?type=jar"/>
@@ -1559,14 +1525,6 @@
       <dependency ref="pkg:maven/org.opendaylight.openflowplugin.model/model-inventory@0.20.0?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.openflowplugin.openflowjava/openflow-protocol-api@0.20.0?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.yangtools/codegen-extensions@14.0.20?type=jar"/>
-    </dependency>
-    <dependency ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-inet-types@14.0.13?type=jar">
-      <dependency ref="pkg:maven/org.opendaylight.mdsal.model/ietf-type-util@14.0.13?type=jar"/>
-      <dependency ref="pkg:maven/org.opendaylight.yangtools/binding-reflect@14.0.20?type=jar"/>
-    </dependency>
-    <dependency ref="pkg:maven/org.opendaylight.mdsal.model/ietf-type-util@14.0.13?type=jar">
-      <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
-      <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
     </dependency>
     <dependency ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-yang-types@14.0.13?type=jar">
       <dependency ref="pkg:maven/org.opendaylight.mdsal.model/ietf-type-util@14.0.13?type=jar"/>
@@ -1582,11 +1540,6 @@
       <dependency ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-inet-types@14.0.13?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.mdsal.model/yang-ext@2013.09.07.27.2?type=jar"/>
     </dependency>
-    <dependency ref="pkg:maven/org.opendaylight.mdsal.model/opendaylight-l2-types@2013.08.27.27.2?type=jar">
-      <dependency ref="pkg:maven/com.google.guava/guava@33.5.0-jre?type=jar"/>
-      <dependency ref="pkg:maven/org.eclipse.jdt/org.eclipse.jdt.annotation@2.4.0?type=jar"/>
-      <dependency ref="pkg:maven/org.opendaylight.yangtools/yang-common@14.0.20?type=jar"/>
-    </dependency>
     <dependency ref="pkg:maven/org.opendaylight.openflowplugin.openflowjava/openflow-protocol-api@0.20.0?type=jar">
       <dependency ref="pkg:maven/io.netty/netty-buffer@4.2.7.Final?type=jar"/>
       <dependency ref="pkg:maven/org.opendaylight.mdsal.binding.model.ietf/rfc6991-ietf-inet-types@14.0.13?type=jar"/>
@@ -1601,10 +1554,20 @@
     </dependency>
     <dependency ref="pkg:maven/io.netty/netty-common@4.2.7.Final?type=jar"/>
     <dependency ref="pkg:maven/org.opendaylight.yangtools/codegen-extensions@14.0.20?type=jar"/>
+    <dependency ref="pkg:maven/org.slf4j/slf4j-api@2.0.12?type=jar"/>
+    <dependency ref="pkg:maven/org.osgi/org.osgi.service.component.annotations@1.5.1?type=jar">
+      <dependency ref="pkg:maven/org.osgi/org.osgi.namespace.extender@1.0.1?type=jar"/>
+      <dependency ref="pkg:maven/org.osgi/org.osgi.util.function@1.0.0?type=jar"/>
+      <dependency ref="pkg:maven/org.osgi/org.osgi.util.promise@1.3.0?type=jar"/>
+    </dependency>
+    <dependency ref="pkg:maven/org.osgi/org.osgi.namespace.extender@1.0.1?type=jar"/>
+    <dependency ref="pkg:maven/org.osgi/org.osgi.util.function@1.0.0?type=jar"/>
+    <dependency ref="pkg:maven/org.osgi/org.osgi.util.promise@1.3.0?type=jar">
+      <dependency ref="pkg:maven/org.osgi/org.osgi.util.function@1.0.0?type=jar"/>
+    </dependency>
     <dependency ref="pkg:maven/org.osgi/org.osgi.annotation.bundle@1.1.0?type=jar">
       <dependency ref="pkg:maven/org.osgi/org.osgi.annotation.versioning@1.1.2?type=jar"/>
     </dependency>
     <dependency ref="pkg:maven/org.osgi/org.osgi.annotation.versioning@1.1.2?type=jar"/>
-    <dependency ref="pkg:maven/org.slf4j/slf4j-api@2.0.12?type=jar"/>
   </dependencies>
 </bom>

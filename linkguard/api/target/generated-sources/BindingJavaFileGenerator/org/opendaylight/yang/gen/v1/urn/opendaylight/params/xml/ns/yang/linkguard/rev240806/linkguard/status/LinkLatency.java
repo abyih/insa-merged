@@ -1,6 +1,7 @@
 package org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status;
 import com.google.common.base.MoreObjects;
 import java.lang.Class;
+import java.lang.Long;
 import java.lang.NullPointerException;
 import java.lang.Object;
 import java.lang.Override;
@@ -14,8 +15,8 @@ import org.opendaylight.yang.svc.v1.urn.opendaylight.params.xml.ns.yang.linkguar
 import org.opendaylight.yangtools.binding.ChildOf;
 import org.opendaylight.yangtools.binding.EntryObject;
 import org.opendaylight.yangtools.binding.lib.CodeHelpers;
-import org.opendaylight.yangtools.yang.common.Decimal64;
 import org.opendaylight.yangtools.yang.common.QName;
+import org.opendaylight.yangtools.yang.common.Uint64;
 
 /**
  *
@@ -27,20 +28,17 @@ import org.opendaylight.yangtools.yang.common.QName;
  *   leaf link-id {
  *     type string;
  *   }
- *   leaf current-rtt {
- *     type decimal64 {
- *       fraction-digits 2;
- *     }
+ *   leaf current-rtt-us {
+ *     type uint64;
  *   }
- *   leaf baseline-rtt {
- *     type decimal64 {
- *       fraction-digits 2;
- *     }
+ *   leaf baseline-rtt-us {
+ *     type uint64;
  *   }
- *   leaf threshold {
- *     type decimal64 {
- *       fraction-digits 2;
- *     }
+ *   leaf threshold-us {
+ *     type uint64;
+ *   }
+ *   leaf deviation-us {
+ *     type int64;
  *   }
  *   leaf status {
  *     type string;
@@ -86,12 +84,13 @@ public interface LinkLatency
     static int bindingHashCode(final org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.@NonNull LinkLatency obj) {
         int result = 1;
         final int prime = 31;
-        result = prime * result + Objects.hashCode(obj.getBaselineRtt());
-        result = prime * result + Objects.hashCode(obj.getCurrentRtt());
+        result = prime * result + Objects.hashCode(obj.getBaselineRttUs());
+        result = prime * result + Objects.hashCode(obj.getCurrentRttUs());
+        result = prime * result + Objects.hashCode(obj.getDeviationUs());
         result = prime * result + Objects.hashCode(obj.getLastCheck());
         result = prime * result + Objects.hashCode(obj.getLinkId());
         result = prime * result + Objects.hashCode(obj.getStatus());
-        result = prime * result + Objects.hashCode(obj.getThreshold());
+        result = prime * result + Objects.hashCode(obj.getThresholdUs());
         for (var augmentation : obj.augmentations().values()) {
             result += augmentation.hashCode();
         }
@@ -114,9 +113,10 @@ public interface LinkLatency
         }
         final var other = CodeHelpers.checkCast(org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.LinkLatency.class, obj);
         return other != null
-            && Objects.equals(thisObj.getBaselineRtt(), other.getBaselineRtt())
-            && Objects.equals(thisObj.getCurrentRtt(), other.getCurrentRtt())
-            && Objects.equals(thisObj.getThreshold(), other.getThreshold())
+            && Objects.equals(thisObj.getBaselineRttUs(), other.getBaselineRttUs())
+            && Objects.equals(thisObj.getCurrentRttUs(), other.getCurrentRttUs())
+            && Objects.equals(thisObj.getDeviationUs(), other.getDeviationUs())
+            && Objects.equals(thisObj.getThresholdUs(), other.getThresholdUs())
             && Objects.equals(thisObj.getLastCheck(), other.getLastCheck())
             && Objects.equals(thisObj.getLinkId(), other.getLinkId())
             && Objects.equals(thisObj.getStatus(), other.getStatus())
@@ -134,12 +134,13 @@ public interface LinkLatency
      */
     static String bindingToString(final org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.@NonNull LinkLatency obj) {
         final var helper = MoreObjects.toStringHelper("LinkLatency");
-        CodeHelpers.appendValue(helper, "baselineRtt", obj.getBaselineRtt());
-        CodeHelpers.appendValue(helper, "currentRtt", obj.getCurrentRtt());
+        CodeHelpers.appendValue(helper, "baselineRttUs", obj.getBaselineRttUs());
+        CodeHelpers.appendValue(helper, "currentRttUs", obj.getCurrentRttUs());
+        CodeHelpers.appendValue(helper, "deviationUs", obj.getDeviationUs());
         CodeHelpers.appendValue(helper, "lastCheck", obj.getLastCheck());
         CodeHelpers.appendValue(helper, "linkId", obj.getLinkId());
         CodeHelpers.appendValue(helper, "status", obj.getStatus());
-        CodeHelpers.appendValue(helper, "threshold", obj.getThreshold());
+        CodeHelpers.appendValue(helper, "thresholdUs", obj.getThresholdUs());
         CodeHelpers.appendAugmentations(helper, "augmentation", obj);
         return helper.toString();
     }
@@ -167,60 +168,79 @@ public interface LinkLatency
     }
     
     /**
-     * Return currentRtt, or {@code null} if it is not present.
+     * Return currentRttUs, or {@code null} if it is not present.
      *
-     * @return {@code Decimal64} currentRtt, or {@code null} if it is not present.
+     * @return {@code Uint64} currentRttUs, or {@code null} if it is not present.
      *
      */
-    Decimal64 getCurrentRtt();
+    Uint64 getCurrentRttUs();
     
     /**
-     * Return currentRtt, guaranteed to be non-null.
+     * Return currentRttUs, guaranteed to be non-null.
      *
-     * @return {@code Decimal64} currentRtt, guaranteed to be non-null.
-     * @throws NoSuchElementException if currentRtt is not present
+     * @return {@code Uint64} currentRttUs, guaranteed to be non-null.
+     * @throws NoSuchElementException if currentRttUs is not present
      *
      */
-    default @NonNull Decimal64 requireCurrentRtt() {
-        return CodeHelpers.require(getCurrentRtt(), "currentrtt");
+    default @NonNull Uint64 requireCurrentRttUs() {
+        return CodeHelpers.require(getCurrentRttUs(), "currentrttus");
     }
     
     /**
-     * Return baselineRtt, or {@code null} if it is not present.
+     * Return baselineRttUs, or {@code null} if it is not present.
      *
-     * @return {@code Decimal64} baselineRtt, or {@code null} if it is not present.
+     * @return {@code Uint64} baselineRttUs, or {@code null} if it is not present.
      *
      */
-    Decimal64 getBaselineRtt();
+    Uint64 getBaselineRttUs();
     
     /**
-     * Return baselineRtt, guaranteed to be non-null.
+     * Return baselineRttUs, guaranteed to be non-null.
      *
-     * @return {@code Decimal64} baselineRtt, guaranteed to be non-null.
-     * @throws NoSuchElementException if baselineRtt is not present
+     * @return {@code Uint64} baselineRttUs, guaranteed to be non-null.
+     * @throws NoSuchElementException if baselineRttUs is not present
      *
      */
-    default @NonNull Decimal64 requireBaselineRtt() {
-        return CodeHelpers.require(getBaselineRtt(), "baselinertt");
+    default @NonNull Uint64 requireBaselineRttUs() {
+        return CodeHelpers.require(getBaselineRttUs(), "baselinerttus");
     }
     
     /**
-     * Return threshold, or {@code null} if it is not present.
+     * Return thresholdUs, or {@code null} if it is not present.
      *
-     * @return {@code Decimal64} threshold, or {@code null} if it is not present.
+     * @return {@code Uint64} thresholdUs, or {@code null} if it is not present.
      *
      */
-    Decimal64 getThreshold();
+    Uint64 getThresholdUs();
     
     /**
-     * Return threshold, guaranteed to be non-null.
+     * Return thresholdUs, guaranteed to be non-null.
      *
-     * @return {@code Decimal64} threshold, guaranteed to be non-null.
-     * @throws NoSuchElementException if threshold is not present
+     * @return {@code Uint64} thresholdUs, guaranteed to be non-null.
+     * @throws NoSuchElementException if thresholdUs is not present
      *
      */
-    default @NonNull Decimal64 requireThreshold() {
-        return CodeHelpers.require(getThreshold(), "threshold");
+    default @NonNull Uint64 requireThresholdUs() {
+        return CodeHelpers.require(getThresholdUs(), "thresholdus");
+    }
+    
+    /**
+     * Return deviationUs, or {@code null} if it is not present.
+     *
+     * @return {@code Long} deviationUs, or {@code null} if it is not present.
+     *
+     */
+    Long getDeviationUs();
+    
+    /**
+     * Return deviationUs, guaranteed to be non-null.
+     *
+     * @return {@code Long} deviationUs, guaranteed to be non-null.
+     * @throws NoSuchElementException if deviationUs is not present
+     *
+     */
+    default @NonNull Long requireDeviationUs() {
+        return CodeHelpers.require(getDeviationUs(), "deviationus");
     }
     
     /**

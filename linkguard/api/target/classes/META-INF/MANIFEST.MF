@@ -1,5 +1,5 @@
 Manifest-Version: 1.0
-Bnd-LastModified: 1789501778758
+Bnd-LastModified: 1790624430358
 Build-Jdk-Spec: 21
 Bundle-Description: Bundle parent (felix-based)
 Bundle-DocURL: https://www.opendaylight.org
@@ -18,23 +18,34 @@ Export-Package: org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml
  g.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkgu
  ard.status;uses:="org.opendaylight.yang.gen.v1.urn.opendaylight.params.
  xml.ns.yang.linkguard.rev240806,org.opendaylight.yangtools.binding,org.
- opendaylight.yangtools.yang.common";version="15.0.2"
+ opendaylight.yangtools.yang.common";version="15.0.2",org.opendaylight.y
+ ang.svc.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806;uses
+ :="com.google.common.collect,org.opendaylight.yangtools.binding.lib,org
+ .opendaylight.yangtools.binding.meta,org.opendaylight.yangtools.yang.co
+ mmon";version="15.0.2"
 Import-Package: com.google.common.base;version="[33.5,34)",com.google.co
  mmon.collect;version="[33.5,34)",com.google.common.util.concurrent;vers
- ion="[33.5,34)",java.lang,java.util,org.opendaylight.yangtools.binding;
- version="[14.0,15)",org.opendaylight.yangtools.binding.lib;version="[14
- .0,15)",org.opendaylight.yangtools.binding.meta;version="[14.0,15)",org
- .opendaylight.yangtools.yang.common;version="[14.0,15)"
+ ion="[33.5,34)",java.lang,java.util,org.opendaylight.yang.gen.v1.urn.op
+ endaylight.params.xml.ns.yang.linkguard.rev240806,org.opendaylight.yang
+ .gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkgua
+ rd.status,org.opendaylight.yang.svc.v1.urn.opendaylight.params.xml.ns.y
+ ang.linkguard.rev240806,org.opendaylight.yangtools.binding;version="[14
+ .0,15)",org.opendaylight.yangtools.binding.lib;version="[14.0,15)",org.
+ opendaylight.yangtools.binding.meta;version="[14.0,15)",org.opendayligh
+ t.yangtools.yang.common;version="[14.0,15)"
 Include-Resource: META-INF/yang/linkguard@2024-08-06.yang=target/generat
  ed-sources/yang/META-INF/yang/linkguard@2024-08-06.yang,META-INF/servic
  es/org.opendaylight.yangtools.binding.meta.YangModelBindingProvider=tar
  get/generated-resources/BindingJavaFileGenerator/META-INF/services/org.
  opendaylight.yangtools.binding.meta.YangModelBindingProvider,/home/sela
- mawit1/Insa-dluxf/linkguard/api/target/classes/LICENSE,META-INF/git.pro
- perties=-/home/selamawit1/Insa-dluxf/linkguard/api/target/classes/META-
- INF/git.properties,META-INF/services=-/home/selamawit1/Insa-dluxf/linkg
- uard/api/target/classes/META-INF/services
-Private-Package: org.opendaylight.yang.svc.v1.urn.opendaylight.params.xm
- l.ns.yang.linkguard.rev240806
+ mawit1/insa-merged/linkguard/api/target/classes/LICENSE,META-INF/git.pr
+ operties=-/home/selamawit1/insa-merged/linkguard/api/target/classes/MET
+ A-INF/git.properties,META-INF/services=-/home/selamawit1/insa-merged/li
+ nkguard/api/target/classes/META-INF/services
+Private-Package: org.opendaylight.yang.gen.v1.urn.opendaylight.params.xm
+ l.ns.yang.linkguard.rev240806,org.opendaylight.yang.gen.v1.urn.opendayl
+ ight.params.xml.ns.yang.linkguard.rev240806.linkguard.status,org.openda
+ ylight.yang.svc.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240
+ 806
 Require-Capability: osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=21))"
 Tool: Bnd-7.0.0.202310060912

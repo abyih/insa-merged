@@ -10,12 +10,14 @@ import java.util.Objects;
 import javax.annotation.processing.Generated;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.DetectionLogs;
-import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.DetectionLogsKey;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.Anomaly;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.AnomalyKey;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.LinkLatency;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.LinkLatencyKey;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.PortClassification;
 import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.PortClassificationKey;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.QuarantinedPort;
+import org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.linkguard.status.QuarantinedPortKey;
 import org.opendaylight.yang.svc.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.YangModuleInfoImpl;
 import org.opendaylight.yangtools.binding.Augmentable;
 import org.opendaylight.yangtools.binding.ChildOf;
@@ -29,24 +31,33 @@ import org.opendaylight.yangtools.yang.common.QName;
  * <pre>
  * container linkguard-status {
  *   config false;
- *   list detection-logs {
- *     key port-id;
- *     leaf port-id {
+ *   list anomaly {
+ *     key id;
+ *     leaf id {
  *       type string;
  *     }
  *     leaf attack-type {
- *       type attack-type;
- *     }
- *     leaf severity {
  *       type string;
  *     }
- *     leaf details {
+ *     leaf severity {
  *       type string;
  *     }
  *     leaf source {
  *       type string;
  *     }
- *     leaf timestamp {
+ *     leaf details {
+ *       type string;
+ *     }
+ *     leaf mitigation-action {
+ *       type string;
+ *     }
+ *     leaf mitigation-reason {
+ *       type string;
+ *     }
+ *     leaf mitigation-state {
+ *       type string;
+ *     }
+ *     leaf detected-at {
  *       type string;
  *     }
  *   }
@@ -59,10 +70,10 @@ import org.opendaylight.yangtools.yang.common.QName;
  *       type string;
  *     }
  *     leaf port-no {
- *       type uint32;
+ *       type string;
  *     }
  *     leaf classification {
- *       type port-classification-type;
+ *       type string;
  *     }
  *     leaf status {
  *       type string;
@@ -76,25 +87,37 @@ import org.opendaylight.yangtools.yang.common.QName;
  *     leaf link-id {
  *       type string;
  *     }
- *     leaf current-rtt {
- *       type decimal64 {
- *         fraction-digits 2;
- *       }
+ *     leaf current-rtt-us {
+ *       type uint64;
  *     }
- *     leaf baseline-rtt {
- *       type decimal64 {
- *         fraction-digits 2;
- *       }
+ *     leaf baseline-rtt-us {
+ *       type uint64;
  *     }
- *     leaf threshold {
- *       type decimal64 {
- *         fraction-digits 2;
- *       }
+ *     leaf threshold-us {
+ *       type uint64;
+ *     }
+ *     leaf deviation-us {
+ *       type int64;
  *     }
  *     leaf status {
  *       type string;
  *     }
  *     leaf last-check {
+ *       type string;
+ *     }
+ *   }
+ *   list quarantined-port {
+ *     key port-id;
+ *     leaf port-id {
+ *       type string;
+ *     }
+ *     leaf attempts {
+ *       type uint16;
+ *     }
+ *     leaf state {
+ *       type string;
+ *     }
+ *     leaf next-attempt-at {
  *       type string;
  *     }
  *   }
@@ -135,9 +158,10 @@ public interface LinkguardStatus
     static int bindingHashCode(final org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.@NonNull LinkguardStatus obj) {
         int result = 1;
         final int prime = 31;
-        result = prime * result + Objects.hashCode(obj.getDetectionLogs());
+        result = prime * result + Objects.hashCode(obj.getAnomaly());
         result = prime * result + Objects.hashCode(obj.getLinkLatency());
         result = prime * result + Objects.hashCode(obj.getPortClassification());
+        result = prime * result + Objects.hashCode(obj.getQuarantinedPort());
         for (var augmentation : obj.augmentations().values()) {
             result += augmentation.hashCode();
         }
@@ -160,9 +184,10 @@ public interface LinkguardStatus
         }
         final var other = CodeHelpers.checkCast(org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.LinkguardStatus.class, obj);
         return other != null
-            && Objects.equals(thisObj.getDetectionLogs(), other.getDetectionLogs())
+            && Objects.equals(thisObj.getAnomaly(), other.getAnomaly())
             && Objects.equals(thisObj.getLinkLatency(), other.getLinkLatency())
             && Objects.equals(thisObj.getPortClassification(), other.getPortClassification())
+            && Objects.equals(thisObj.getQuarantinedPort(), other.getQuarantinedPort())
             && thisObj.augmentations().equals(other.augmentations());
     }
     
@@ -177,29 +202,30 @@ public interface LinkguardStatus
      */
     static String bindingToString(final org.opendaylight.yang.gen.v1.urn.opendaylight.params.xml.ns.yang.linkguard.rev240806.@NonNull LinkguardStatus obj) {
         final var helper = MoreObjects.toStringHelper("LinkguardStatus");
-        CodeHelpers.appendValue(helper, "detectionLogs", obj.getDetectionLogs());
+        CodeHelpers.appendValue(helper, "anomaly", obj.getAnomaly());
         CodeHelpers.appendValue(helper, "linkLatency", obj.getLinkLatency());
         CodeHelpers.appendValue(helper, "portClassification", obj.getPortClassification());
+        CodeHelpers.appendValue(helper, "quarantinedPort", obj.getQuarantinedPort());
         CodeHelpers.appendAugmentations(helper, "augmentation", obj);
         return helper.toString();
     }
     
     /**
-     * Return detectionLogs, or {@code null} if it is not present.
+     * Return anomaly, or {@code null} if it is not present.
      *
-     * @return {@code Map<DetectionLogsKey, DetectionLogs>} detectionLogs, or {@code null} if it is not present.
+     * @return {@code Map<AnomalyKey, Anomaly>} anomaly, or {@code null} if it is not present.
      *
      */
-    @Nullable Map<DetectionLogsKey, DetectionLogs> getDetectionLogs();
+    @Nullable Map<AnomalyKey, Anomaly> getAnomaly();
     
     /**
-     * Return detectionLogs, or an empty list if it is not present.
+     * Return anomaly, or an empty list if it is not present.
      *
-     * @return {@code Map<DetectionLogsKey, DetectionLogs>} detectionLogs, or an empty list if it is not present.
+     * @return {@code Map<AnomalyKey, Anomaly>} anomaly, or an empty list if it is not present.
      *
      */
-    default @NonNull Map<DetectionLogsKey, DetectionLogs> nonnullDetectionLogs() {
-        return CodeHelpers.nonnull(getDetectionLogs());
+    default @NonNull Map<AnomalyKey, Anomaly> nonnullAnomaly() {
+        return CodeHelpers.nonnull(getAnomaly());
     }
     
     /**
@@ -236,6 +262,24 @@ public interface LinkguardStatus
      */
     default @NonNull Map<LinkLatencyKey, LinkLatency> nonnullLinkLatency() {
         return CodeHelpers.nonnull(getLinkLatency());
+    }
+    
+    /**
+     * Return quarantinedPort, or {@code null} if it is not present.
+     *
+     * @return {@code Map<QuarantinedPortKey, QuarantinedPort>} quarantinedPort, or {@code null} if it is not present.
+     *
+     */
+    @Nullable Map<QuarantinedPortKey, QuarantinedPort> getQuarantinedPort();
+    
+    /**
+     * Return quarantinedPort, or an empty list if it is not present.
+     *
+     * @return {@code Map<QuarantinedPortKey, QuarantinedPort>} quarantinedPort, or an empty list if it is not present.
+     *
+     */
+    default @NonNull Map<QuarantinedPortKey, QuarantinedPort> nonnullQuarantinedPort() {
+        return CodeHelpers.nonnull(getQuarantinedPort());
     }
 
 }
