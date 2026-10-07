@@ -803,3 +803,73 @@ async function applyOnosTls(enable) {
   await execP("sudo systemctl restart onos");
   console.log(`[Orchestrator] Native ONOS restarted with TLS ${enable ? "ENABLED" : "DISABLED"}.`);
 }
+
+/* ==============================================================================
+   NORTHBOUND TLS (REST API, port 8443) — additive: never disables port 8181.
+   ============================================================================== */
+
+export async function updateOnosNorthboundTlsConfig(enable) {
+  const c = process.env.ONOS_CONTAINER_NAME || "onos-2.7";
+  const etc = process.env.ONOS_INTERNAL_ETC || "/root/onos/apache-karaf-4.2.9/etc";
+  const paxFile = `${etc}/org.ops4j.pax.web.cfg`;
+  await execP(
+    `docker exec ${c} sh -c "sed -i 's/^org\\.osgi\\.service\\.http\\.secure\\.enabled *=.*/org.osgi.service.http.secure.enabled = ${enable}/' ${paxFile}"`
+  );
+}
+
+// export async function updateOdlNorthboundTlsConfig(enable) {
+//   const vmUser = process.env.VM_USER || os.userInfo().username;
+//   const rawEtcPath = process.env.ODL_ETC_PATH || `/home/${vmUser}/karaf-0.23.0/etc`;
+//   const odlEtc = resolvePortablePath(rawEtcPath);
+//   const paxFile = path.join(odlEtc, "org.ops4j.pax.web.cfg");
+//   updatePropertiesFile(paxFile, { "org.osgi.service.http.secure.enabled": enable ? "true" : "false" });
+// }
+export async function updateOdlNorthboundTlsConfig(enable) {
+  const vmUser = process.env.VM_USER || os.userInfo().username;
+  const rawEtcPath = process.env.ODL_ETC_PATH || `/home/${vmUser}/karaf-0.23.0/etc`;
+  const odlEtc = resolvePortablePath(rawEtcPath);
+  const paxFile = path.join(odlEtc, "org.ops4j.pax.web.cfg");
+  const keystorePath = path.join(odlEtc, "opendaylight-keystore.jks");
+
+  const configUpdates = {
+    "org.osgi.service.http.port": "8181",
+    "org.osgi.service.http.enabled": "true",
+    "org.osgi.service.http.port.secure": "8443",
+    "org.osgi.service.http.secure.enabled": enable ? "true" : "false",
+    "org.ops4j.pax.web.ssl.keystore": keystorePath,
+    "org.ops4j.pax.web.ssl.password": "changeit",
+    "org.ops4j.pax.web.ssl.keypassword": "changeit",
+    "org.ops4j.pax.web.ssl.keystore.type": "PKCS12",
+    "org.ops4j.pax.web.ssl.clientauthneeded": "false"
+  };
+
+  updatePropertiesFile(paxFile, configUpdates);
+  console.log(`[Orchestrator] ODL Northbound TLS set to ${enable ? "ENABLED (8443)" : "DISABLED"}`);
+}
+
+export async function updateNorthboundTlsConfig(controller, enable) {
+  const target = controller.toLowerCase();
+  if (target === "onos") return updateOnosNorthboundTlsConfig(enable);
+  if (target === "odl") return updateOdlNorthboundTlsConfig(enable);
+  throw new Error(`Unsupported controller for Northbound TLS: ${controller}`);
+}
+
+export async function getNorthboundTlsStatus(controller) {
+  const target = controller.toLowerCase();
+  try {
+    if (target === "onos") {
+      const c = process.env.ONOS_CONTAINER_NAME || "onos-2.7";
+      const etc = process.env.ONOS_INTERNAL_ETC || "/root/onos/apache-karaf-4.2.9/etc";
+      const { stdout } = await execP(`docker exec ${c} cat ${etc}/org.ops4j.pax.web.cfg`).catch(() => ({ stdout: "" }));
+      return /^\s*org\.osgi\.service\.http\.secure\.enabled\s*=\s*true/m.test(stdout);
+    }
+    if (target === "odl") {
+      const vmUser = process.env.VM_USER || os.userInfo().username;
+      const rawEtcPath = process.env.ODL_ETC_PATH || `/home/${vmUser}/karaf-0.23.0/etc`;
+      const odlEtc = resolvePortablePath(rawEtcPath);
+      const paxFile = path.join(odlEtc, "org.ops4j.pax.web.cfg");
+      if (fs.existsSync(paxFile)) return /^\s*org\.osgi\.service\.http\.secure\.enabled\s*=\s*true/m.test(fs.readFileSync(paxFile, "utf8"));
+    }
+  } catch {}
+  return false;
+}

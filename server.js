@@ -22,7 +22,7 @@ import { execFile } from "child_process";
 import http from "http";
 import { Server } from "socket.io";
 import linkguardRouter, { startPolling, onosClient } from "./linkguard.js";
-import { updateOdlTlsConfig, updateOnosTlsConfig } from "./tlsOrchestrator.js";
+import { updateOdlTlsConfig, updateOnosTlsConfig, updateNorthboundTlsConfig, getNorthboundTlsStatus } from "./tlsOrchestrator.js";
 import { registerDigestJobs } from "./digest.js";
 import bcrypt from "bcryptjs";
 import Database from "better-sqlite3";
@@ -3412,6 +3412,62 @@ async function resolveKeystoneUrl() {
    SDN TLS CONFIGURATION ROUTES (NORTHBOUND & SOUTHBOUND)
    ========================================== */
 
+// app.get(["/api/tls/status", "/api/openstack/tls/status"], async (req, res) => {
+//   const controller = (req.query.controller || "onos").toLowerCase();
+
+//   try {
+//     if (controller === "onos") {
+//       const containerName = process.env.ONOS_CONTAINER_NAME || "onos-2.7";
+//       const internalEtc = process.env.ONOS_INTERNAL_ETC || "/root/onos/apache-karaf-4.2.9/etc";
+//       const ofFileName = "org.onosproject.openflow.controller.impl.OpenFlowControllerImpl.cfg";
+//       const logFile = path.posix.join(internalEtc, "..", "data", "log", "karaf.log");
+
+//       // 1. Check Southbound status (OpenFlow 6653)
+//       let isSouthbound = false;
+//       const logCmd = `docker exec ${containerName} sh -c "grep -o 'TlsParams{tlsMode=[a-z]*' ${logFile} | tail -1"`;
+//       try {
+//         const { stdout: logOut } = await execAsync(logCmd);
+//         const m = (logOut || "").match(/tlsMode=(\w+)/);
+//         if (m) {
+//           isSouthbound = m[1] !== "disabled";
+//         } else {
+//           const { stdout: cfgOut } = await execAsync(`docker exec ${containerName} cat ${internalEtc}/${ofFileName}`);
+//           isSouthbound = /tlsMode\s*=\s*(strict|enabled)/.test(cfgOut);
+//         }
+//       } catch (_) {}
+
+//       return res.json({
+//         controller: "onos",
+//         isEnabled: isSouthbound,
+//         southbound: isSouthbound,
+//       });
+
+//     } else if (controller === "odl") {
+//       const vmUser = process.env.VM_USER || os.userInfo().username;
+//       const rawEtcPath = process.env.ODL_ETC_PATH || `/home/${vmUser}/karaf-0.23.0/etc`;
+//       const odlEtcPath = resolvePortablePath(rawEtcPath);
+//       const ofPluginPath = path.join(odlEtcPath, "org.opendaylight.openflowplugin.cfg");
+
+//       let isSouthbound = false;
+//       if (fs.existsSync(ofPluginPath)) {
+//         const content = fs.readFileSync(ofPluginPath, "utf8");
+//         isSouthbound =
+//           content.includes("use-transport-tls=true") || content.includes("transport-protocol=TLS");
+//       }
+
+//       return res.json({
+//         controller: "odl",
+//         isEnabled: isSouthbound,
+//         southbound: isSouthbound,
+//       });
+//     } else {
+//       return res.status(400).json({ error: "Unsupported controller. Choose 'odl' or 'onos'." });
+//     }
+//   } catch (error) {
+//     res.status(500).json({ error: "Failed to read configuration status.", details: error.message });
+//   }
+// });
+
 app.get(["/api/tls/status", "/api/openstack/tls/status"], async (req, res) => {
   const controller = (req.query.controller || "onos").toLowerCase();
 
@@ -3436,10 +3492,14 @@ app.get(["/api/tls/status", "/api/openstack/tls/status"], async (req, res) => {
         }
       } catch (_) {}
 
+      // 2. Check Northbound status (REST API 8443)
+      const isNorthbound = await getNorthboundTlsStatus(controller).catch(() => false);
+
       return res.json({
         controller: "onos",
         isEnabled: isSouthbound,
         southbound: isSouthbound,
+        northbound: isNorthbound,
       });
 
     } else if (controller === "odl") {
@@ -3455,10 +3515,13 @@ app.get(["/api/tls/status", "/api/openstack/tls/status"], async (req, res) => {
           content.includes("use-transport-tls=true") || content.includes("transport-protocol=TLS");
       }
 
+      const isNorthbound = await getNorthboundTlsStatus(controller).catch(() => false);
+
       return res.json({
         controller: "odl",
         isEnabled: isSouthbound,
         southbound: isSouthbound,
+        northbound: isNorthbound,
       });
     } else {
       return res.status(400).json({ error: "Unsupported controller. Choose 'odl' or 'onos'." });
@@ -3470,11 +3533,62 @@ app.get(["/api/tls/status", "/api/openstack/tls/status"], async (req, res) => {
 
 // ONOS can take 2-3 minutes (container restart), which browsers/proxies drop as a
 // "Network Error". So ONOS toggles run as a background job the UI polls for the result.
+
+// Unified Toggle Route (Handles both Northbound and Southbound)
+// app.post(["/api/tls/toggle", "/api/openstack/tls/toggle"], async (req, res) => {
+//   const { controller, enable } = req.body;
+//   if (!controller || typeof enable !== "boolean") {
+//     return res
+//       .status(400)
+//       .json({ error: "Invalid request. 'controller' and boolean 'enable' required." });
+//   }
+
+//   const target = controller.toLowerCase();
+
+//   // Route 2: Southbound (Port 6653)
+//   try {
+//     if (target === "odl") {
+//       await updateOdlTlsConfig(enable);
+//       return res.json({
+//         success: true,
+//         message: `ODL Southbound TLS is now ${enable ? "ENABLED" : "DISABLED"}`,
+//       });
+//     } else if (target === "onos") {
+//       if (tlsJobs.onos?.state === "running") {
+//         return res.status(202).json({ success: true, pending: true, message: "ONOS update already running." });
+//       }
+//       tlsJobs.onos = { state: "running", enable, message: "", startedAt: Date.now() };
+//       updateOnosTlsConfig(enable)
+//         .then(() => {
+//           tlsJobs.onos = {
+//             ...tlsJobs.onos,
+//             state: "done",
+//             message: `ONOS Southbound TLS is now ${enable ? "ENABLED" : "DISABLED"}`,
+//           };
+//         })
+//         .catch((err) => {
+//           console.error("[TLS Toggle Error]", err.message);
+//           tlsJobs.onos = { ...tlsJobs.onos, state: "error", message: err.message };
+//         });
+//       return res.status(202).json({ success: true, pending: true });
+//     } else {
+//       return res.status(400).json({ error: "TLS orchestration is only supported for ODL or ONOS." });
+//     }
+//   } catch (error) {
+//     console.error("[TLS Toggle Error]", error.message);
+//     res
+//       .status(500)
+//       .json({ error: "Failed to update controller configuration.", details: error.message });
+//   }
+// });
+
+// ONOS can take 2-3 minutes (container restart), which browsers/proxies drop as a
+// "Network Error". So ONOS toggles run as a background job the UI polls for the result.
 const tlsJobs = {};
 
 // Unified Toggle Route (Handles both Northbound and Southbound)
 app.post(["/api/tls/toggle", "/api/openstack/tls/toggle"], async (req, res) => {
-  const { controller, enable } = req.body;
+  const { controller, enable, channel = "southbound" } = req.body;
   if (!controller || typeof enable !== "boolean") {
     return res
       .status(400)
@@ -3483,8 +3597,17 @@ app.post(["/api/tls/toggle", "/api/openstack/tls/toggle"], async (req, res) => {
 
   const target = controller.toLowerCase();
 
-  // Route 2: Southbound (Port 6653)
   try {
+    // Route 1: Northbound (Port 8443) — a config-property flip, applies immediately
+    if (channel === "northbound") {
+      await updateNorthboundTlsConfig(target, enable);
+      return res.json({
+        success: true,
+        message: `Northbound TLS (port 8443) is now ${enable ? "ENABLED" : "DISABLED"} for ${target.toUpperCase()} — port 8181 is unaffected.`,
+      });
+    }
+
+    // Route 2: Southbound (Port 6653) — existing behavior, unchanged
     if (target === "odl") {
       await updateOdlTlsConfig(enable);
       return res.json({
@@ -3518,6 +3641,11 @@ app.post(["/api/tls/toggle", "/api/openstack/tls/toggle"], async (req, res) => {
       .status(500)
       .json({ error: "Failed to update controller configuration.", details: error.message });
   }
+});
+
+app.get("/api/tls/job", (req, res) => {
+  const target = String(req.query.controller || "").toLowerCase();
+  res.json(tlsJobs[target] || { state: "idle" });
 });
 
 app.get("/api/tls/job", (req, res) => {
